@@ -1,0 +1,65 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "little-world",
+  "main": "src/server/worker.ts",
+  "workers_dev": true,
+  "routes": [
+    {
+      "pattern": "littleworldstory.com",
+      "custom_domain": true
+    },
+    {
+      "pattern": "www.littleworldstory.com",
+      "custom_domain": true
+    }
+  ],
+  "compatibility_date": "2026-09-03",
+  "compatibility_flags": ["nodejs_compat"],
+  "assets": {
+    "directory": "./dist",
+    "binding": "ASSETS"
+  },
+  "observability": {
+    "enabled": true
+  },
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "little-world",
+      "database_id": "47dd449c-387a-47e9-a721-584ed226a93b",
+      "migrations_dir": "drizzle/migrations"
+    }
+  ],
+  "r2_buckets": [
+    {
+      "binding": "BOOK_ASSETS",
+      "bucket_name": "little-world-assets"
+    }
+  ],
+  "browser": {
+    "binding": "BROWSER"
+  },
+  "workflows": [
+    {
+      "name": "build-world",
+      "binding": "BUILD_WORLD_WORKFLOW",
+      "class_name": "BuildWorldWorkflow"
+    },
+    {
+      "name": "generate-book",
+      "binding": "GENERATE_BOOK_WORKFLOW",
+      "class_name": "GenerateBookWorkflow"
+    }
+  ],
+  "triggers": {
+    "crons": ["*/15 * * * *"]
+  },
+  "vars": {
+    "APP_BASE_URL": "https://littleworldstory.com",
+    "OPENAI_STORY_MODEL": "gpt-5.6-terra",
+    "OPENAI_FAST_MODEL": "gpt-5.6-luna",
+    "OPENAI_IMAGE_MODEL": "gpt-image-2",
+    "RESEND_FROM_EMAIL": "Little World <stories@mail.littleworldstory.com>",
+    "ADMIN_EMAILS": "adlerehud@gmail.com,easports96@gmail.com"
+  }
+}

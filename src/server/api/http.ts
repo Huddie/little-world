@@ -1,0 +1,813 @@
+import { zValidator } from "@hono/zod-validator";
+import { and, desc, eq, inArray, lte } from "drizzle-orm";
+import { Hono } from "hono";
+import { z } from "zod";
+import { CharacterCastGenerator } from "../../ai/characters/cast-generator";
+import { CharacterNameSuggestionService } from "../../ai/characters/name-suggestions";
+import { getBookDetailForUser, listBooksForUser } from "../../domain/books/service";
+import { archiveChild, createChild, createChildInputSchema, listChildrenForUser, updateStoryInspiration } from "../../domain/children/service";
+import { createSubscription, listSubscriptionsForUser, updateSubscriptionDeliveryMethods, updateSubscriptionFrequency } from "../../domain/subscriptions/service";
+import { getActiveCatalog } from "../../domain/universes/service";
+import { parseJson, stringArraySchema } from "../../domain/json";
+import { inviteRelationship, inviteRelationshipInputSchema, listRelationshipsForUser, updateRelationshipStatus } from "../../domain/relationships/service";
+import { R2AssetStore } from "../../storage/asset-store";
+import { createAuth, getPrincipalAccess, getSessionUser, requirePermission } from "../auth/auth";
+import { createDb, type Db } from "../db/client";
+import {
+  assets,
+  bookIssues,
+  bookPages,
+  books,
+  canonEvents,
+  characters,
+  childPreferences,
+  children,
+  deliveries,
+  episodeSummaries,
+  generationSteps,
+  productDeliveryOptions,
+  products,
+  qaResults,
+  sessions,
+  subscriptionChildSlots,
+  subscriptionDeliveryMethods,
+  subscriptions,
+  universes,
+  userRoles,
+  users
+} from "../db/schema";
+import type { Env } from "../env";
+import { generationStepLabels, type GenerationStepName } from "../../workflows/generation-steps";
+
+type Variables = {
+  userId: string;
+  userEmail: string;
+};
+
+export function createApi() {
+  const app = new Hono<{ Bindings: Env; Variables: Variables }>();
+
+  app.on(["GET", "POST"], "/api/auth/*", (c) => createAuth(c.env).handler(c.req.raw));
+
+  app.use("/api/*", async (c, next) => {
+    if (c.req.path.startsWith("/api/auth/")) return next();
+    const user = await getSessionUser(c.req.raw, c.env);
+    if (!user) return c.json({ error: "Unauthorized" }, 401);
+    c.set("userId", user.id);
+    c.set("userEmail", user.email);
+    return next();
+  });
+
+  app.get("/api/catalog", async (c) => c.json(await getActiveCatalog(createDb(c.env.DB))));
+
+  app.get("/api/products", async (c) => c.json(await listProducts(createDb(c.env.DB))));
+
+  app.get("/api/dashboard", async (c) => {
+    const dashboard = await getDashboard(createDb(c.env.DB), c.get("userId"), c.get("userEmail"), c.req.query("childId") ?? null);
+    if (!dashboard) return c.json({ error: "No active story subscription found" }, 404);
+    return c.json(dashboard);
+  });
+
+  app.get("/api/profile", async (c) => {
+    const user = await createDb(c.env.DB).query.users.findFirst({ where: eq(users.id, c.get("userId")) });
+    return c.json({ id: c.get("userId"), email: c.get("userEmail"), name: user?.name ?? "" });
+  });
+
+  app.patch(
+    "/api/profile",
+    zValidator("json", z.object({ name: z.string().trim().max(120).nullable() })),
+    async (c) => {
+      await createDb(c.env.DB)
+        .update(users)
+        .set({ name: c.req.valid("json").name?.trim() || null, updatedAt: new Date().toISOString() })
+        .where(eq(users.id, c.get("userId")));
+      return c.json({ ok: true });
+    }
+  );
+
+  app.post(
+    "/api/character-names/suggest",
+    zValidator(
+      "json",
+      z.object({
+        universeName: z.string().min(1),
+        characterSpecies: z.string().min(1).optional(),
+        characterPersonality: z.string().min(1).optional(),
+        count: z.number().int().min(1).max(100).optional()
+      })
+    ),
+    async (c) => {
+      const service = new CharacterNameSuggestionService(c.env.OPENAI_API_KEY, c.env.OPENAI_FAST_MODEL);
+      return c.json({ names: await service.suggest(c.req.valid("json")) });
+    }
+  );
+
+  app.post(
+    "/api/characters/generate-cast",
+    zValidator(
+      "json",
+      z.object({
+        ageRange: z.enum(["1-11 months", "12-23 months", "2-3", "4-5", "6-8", "9-12"]),
+        storyGenres: z.array(z.string().min(1)).max(12).default([]),
+        interests: z.array(z.string().min(1)).max(16).default([])
+      })
+    ),
+    async (c) => {
+      const [product] = await listProducts(createDb(c.env.DB));
+      if (!product) return c.json({ error: "No active story product found" }, 404);
+
+      const generator = new CharacterCastGenerator(c.env.OPENAI_API_KEY, c.env.OPENAI_STORY_MODEL);
+      const request = c.req.valid("json");
+      const generationInput = {
+        universeName: product.universe.name,
+        universeDescription: product.universe.description,
+        ageRange: request.ageRange,
+        storyGenres: request.storyGenres,
+        interests: request.interests,
+        curatedCharacters: product.universe.characters
+      };
+      let generated;
+      try {
+        generated = await generator.generate(generationInput);
+      } catch (error) {
+        const detail = error instanceof Error ? error.message : "Unknown character generation error";
+        console.error("Character cast generation failed", { detail });
+        return c.json({ error: "Character generation is temporarily unavailable. Please try again. If it continues, contact support." }, 503);
+      }
+
+      return c.json({ characters: generated });
+    }
+  );
+
+  app.get("/api/children", async (c) => c.json(await listChildSummaries(createDb(c.env.DB), c.get("userId"))));
+
+  app.post("/api/children", zValidator("json", createChildInputSchema), async (c) => {
+    const child = await createChild(createDb(c.env.DB), c.get("userId"), c.req.valid("json"));
+    return c.json(child, 201);
+  });
+
+  app.delete("/api/children/:id", async (c) => {
+    const db = createDb(c.env.DB);
+    await db
+      .update(subscriptionChildSlots)
+      .set({ status: "REMOVED", updatedAt: new Date().toISOString() })
+      .where(eq(subscriptionChildSlots.childId, c.req.param("id")));
+    await archiveChild(db, c.get("userId"), c.req.param("id"));
+    return c.json({ ok: true });
+  });
+
+  app.patch(
+    "/api/children/:id/inspiration",
+    zValidator("json", z.object({ optionalParentNotes: z.string().max(1000).nullable() })),
+    async (c) => {
+      const child = await updateStoryInspiration(createDb(c.env.DB), c.get("userId"), c.req.param("id"), c.req.valid("json").optionalParentNotes);
+      return c.json(child);
+    }
+  );
+
+  app.patch(
+    "/api/children/current/inspiration",
+    zValidator("json", z.object({ optionalParentNotes: z.string().max(1000).nullable() })),
+    async (c) => {
+      const db = createDb(c.env.DB);
+      const current = await db.query.children.findFirst({
+        where: eq(children.userId, c.get("userId")),
+        orderBy: (table, { desc: descending }) => [descending(table.createdAt)]
+      });
+      if (!current) return c.json({ error: "Child not found" }, 404);
+      const child = await updateStoryInspiration(db, c.get("userId"), current.id, c.req.valid("json").optionalParentNotes);
+      return c.json({ notes: child.preferences?.optionalParentNotes ?? "" });
+    }
+  );
+
+  app.get("/api/subscriptions", async (c) => c.json(await listSubscriptionsForUser(createDb(c.env.DB), c.get("userId"))));
+
+  app.patch(
+    "/api/subscriptions/:id/status",
+    zValidator("json", z.object({ status: z.enum(["ACTIVE", "PAUSED", "CANCELLED"]) })),
+    async (c) => {
+      const db = createDb(c.env.DB);
+      const subscription = await db.query.subscriptions.findFirst({ where: and(eq(subscriptions.id, c.req.param("id")), eq(subscriptions.userId, c.get("userId"))) });
+      if (!subscription) return c.json({ error: "Subscription not found" }, 404);
+      await db.update(subscriptions).set({ status: c.req.valid("json").status, updatedAt: new Date().toISOString() }).where(eq(subscriptions.id, subscription.id));
+      return c.json({ ok: true });
+    }
+  );
+
+  app.patch(
+    "/api/subscriptions/:id/frequency",
+    zValidator("json", z.object({ frequency: z.enum(["WEEKLY", "BIWEEKLY", "MONTHLY"]) })),
+    async (c) => c.json(await updateSubscriptionFrequency(createDb(c.env.DB), c.get("userId"), c.req.param("id"), c.req.valid("json").frequency))
+  );
+
+  app.patch(
+    "/api/subscriptions/:id/delivery",
+    zValidator("json", z.object({ deliveryMethods: z.array(z.enum(["EMAIL", "MAIL"])).min(1) })),
+    async (c) => c.json(await updateSubscriptionDeliveryMethods(createDb(c.env.DB), c.get("userId"), c.req.param("id"), c.req.valid("json").deliveryMethods))
+  );
+
+  app.delete("/api/subscriptions/:id", async (c) => {
+    const db = createDb(c.env.DB);
+    const subscription = await db.query.subscriptions.findFirst({ where: and(eq(subscriptions.id, c.req.param("id")), eq(subscriptions.userId, c.get("userId"))) });
+    if (!subscription) return c.json({ error: "Subscription not found" }, 404);
+    await db.delete(subscriptions).where(eq(subscriptions.id, subscription.id));
+    return c.json({ ok: true });
+  });
+
+  app.delete("/api/account", async (c) => {
+    const db = createDb(c.env.DB);
+    await db.delete(sessions).where(eq(sessions.userId, c.get("userId")));
+    await db.delete(users).where(eq(users.id, c.get("userId")));
+    return c.json({ ok: true });
+  });
+
+  app.get("/api/relationships", async (c) => c.json(await listRelationshipsForUser(createDb(c.env.DB), c.get("userId"))));
+
+  app.post("/api/relationships", zValidator("json", inviteRelationshipInputSchema), async (c) => {
+    return c.json(await inviteRelationship(createDb(c.env.DB), c.get("userId"), c.req.valid("json")), 201);
+  });
+
+  app.post(
+    "/api/relationships/:id/status",
+    zValidator("json", z.object({ status: z.enum(["ACTIVE", "REJECTED", "REMOVED"]) })),
+    async (c) => c.json(await updateRelationshipStatus(createDb(c.env.DB), c.get("userId"), c.req.param("id"), c.req.valid("json").status))
+  );
+
+  app.post(
+    "/api/subscriptions",
+    zValidator(
+      "json",
+      z.object({
+        childId: z.string().min(1),
+        productId: z.string().min(1),
+        deliveryMethods: z.array(z.enum(["EMAIL", "MAIL"])).min(1)
+      })
+    ),
+    async (c) => {
+      const db = createDb(c.env.DB);
+      const result = await createSubscription(db, c.get("userId"), c.req.valid("json"));
+      await c.env.BUILD_WORLD_WORKFLOW.create({
+        id: `${result.firstIssue.id}-world-${crypto.randomUUID()}`,
+        params: { childId: result.firstIssue.childId, firstIssueId: result.firstIssue.id },
+      });
+      return c.json(result, 201);
+    }
+  );
+
+  app.get("/api/books", async (c) => c.json((await listBooksForUser(createDb(c.env.DB), c.get("userId"))).map((record) => toClientBookIssue(record.issue, record.book))));
+
+  app.get("/api/books/:id", async (c) => {
+    const detail = await getBookDetailForUser(createDb(c.env.DB), c.get("userId"), c.req.param("id"));
+    return c.json(toClientBookIssue(detail.issue, detail.book, detail.pages));
+  });
+
+  app.get("/api/r2/*", async (c) => {
+    const key = c.req.path.replace("/api/r2/", "");
+    const object = await c.env.BOOK_ASSETS.get(key);
+    if (!object) return c.json({ error: "Not found" }, 404);
+    return new Response(object.body, { headers: { "Content-Type": object.httpMetadata?.contentType ?? "application/octet-stream" } });
+  });
+
+  app.get("/api/assets/:id/download", async (c) => {
+    const db = createDb(c.env.DB);
+    const owned = await db
+      .select({ asset: assets })
+      .from(assets)
+      .innerJoin(books, eq(books.pdfAssetId, assets.id))
+      .innerJoin(bookIssues, eq(bookIssues.id, books.bookIssueId))
+      .innerJoin(subscriptions, eq(subscriptions.id, bookIssues.subscriptionId))
+      .where(and(eq(assets.id, c.req.param("id")), eq(subscriptions.userId, c.get("userId"))))
+      .get();
+    const adminEmails = (c.env.ADMIN_EMAILS ?? "").split(",").map((email: string) => email.trim().toLowerCase());
+    const characterAssetOwned = owned ? true : await userOwnsCharacterAsset(db, c.get("userId"), c.req.param("id"));
+    if (!owned && !characterAssetOwned && !adminEmails.includes(c.get("userEmail").toLowerCase())) return c.json({ error: "Not found" }, 404);
+    const object = await new R2AssetStore(db, c.env.BOOK_ASSETS, c.env.APP_BASE_URL).get(c.req.param("id"));
+    if (!object) return c.json({ error: "Not found" }, 404);
+    return new Response(object.body, { headers: { "Content-Type": object.httpMetadata?.contentType ?? "application/octet-stream" } });
+  });
+
+  app.use("/api/admin/*", async (c, next) => {
+    await requirePermission(createDb(c.env.DB), { id: c.get("userId"), email: c.get("userEmail") }, c.env, "admin:read");
+    return next();
+  });
+
+  app.get("/api/admin/me", async (c) => {
+    return c.json(await getPrincipalAccess(createDb(c.env.DB), { id: c.get("userId"), email: c.get("userEmail") }, c.env));
+  });
+
+  app.get("/api/admin/users", async (c) => {
+    const db = createDb(c.env.DB);
+    await requirePermission(db, { id: c.get("userId"), email: c.get("userEmail") }, c.env, "users:read");
+    return c.json(await listAdminUsers(db));
+  });
+
+  app.get("/api/admin/children", async (c) => {
+    const db = createDb(c.env.DB);
+    return c.json(await listAdminChildren(db));
+  });
+
+  app.get("/api/admin/subscriptions", async (c) => {
+    const db = createDb(c.env.DB);
+    return c.json(await listAdminSubscriptions(db));
+  });
+
+  app.get("/api/admin/book-issues", async (c) => {
+    const db = createDb(c.env.DB);
+    return c.json(await listAdminIssues(db));
+  });
+
+  app.get("/api/admin/book-issues/:id", async (c) => {
+    const issue = await getAdminIssue(createDb(c.env.DB), c.req.param("id"));
+    if (!issue) return c.json({ error: "Book issue not found" }, 404);
+    return c.json(issue);
+  });
+
+  app.get("/api/admin/deliveries", async (c) => {
+    const db = createDb(c.env.DB);
+    return c.json(await db.select().from(deliveries).orderBy(desc(deliveries.createdAt)).limit(100));
+  });
+
+  app.post("/api/admin/book-issues/:id/retry", async (c) => {
+    const db = createDb(c.env.DB);
+    await requirePermission(db, { id: c.get("userId"), email: c.get("userEmail") }, c.env, "admin:retry");
+    const issueId = c.req.param("id");
+    await resetBookIssueForRetry(db, issueId);
+    await startIssueWorkflow(db, c.env, issueId);
+    return c.json({ ok: true });
+  });
+
+  app.post("/api/admin/book-issues/:id/steps/:stepId/retry", async (c) => {
+    const db = createDb(c.env.DB);
+    await requirePermission(db, { id: c.get("userId"), email: c.get("userEmail") }, c.env, "admin:retry");
+    const issueId = c.req.param("id");
+    await resetBookIssueForRetry(db, issueId);
+    await startIssueWorkflow(db, c.env, issueId);
+    return c.json({ ok: true });
+  });
+
+  app.get("/api/admin/failures", async (c) => {
+    const db = createDb(c.env.DB);
+    const failedIssues = await db.select().from(bookIssues).where(eq(bookIssues.status, "FAILED")).orderBy(desc(bookIssues.updatedAt)).limit(50);
+    const failedDeliveries = await db.select().from(deliveries).where(eq(deliveries.status, "FAILED")).orderBy(desc(deliveries.createdAt)).limit(50);
+    return c.json({ failedIssues, failedDeliveries });
+  });
+
+  app.notFound((c) => {
+    if (!["GET", "HEAD"].includes(c.req.method) || c.req.path.startsWith("/api/")) {
+      return c.text("Not found", 404);
+    }
+    if (c.req.path.split("/").some((part) => part.startsWith("."))) {
+      return c.text("Not found", 404);
+    }
+
+    const url = new URL(c.req.url);
+    url.pathname = "/";
+    return c.env.ASSETS.fetch(new Request(url, c.req.raw));
+  });
+
+  return app;
+}
+
+export async function runScheduler(env: Env, now = new Date()) {
+  const db = createDb(env.DB);
+  const due = await db.select().from(subscriptions).where(and(eq(subscriptions.status, "ACTIVE"), lte(subscriptions.nextIssueAt, now.toISOString()))).limit(25);
+  for (const subscription of due) {
+    const { createBookIssueForSubscription } = await import("../../domain/books/service");
+    const slots = await db.select().from(subscriptionChildSlots).where(and(eq(subscriptionChildSlots.subscriptionId, subscription.id), eq(subscriptionChildSlots.status, "ACTIVE")));
+    const targetChildIds = slots.length > 0 ? slots.map((slot) => slot.childId) : [subscription.childId];
+    for (const childId of targetChildIds) {
+      const issue = await createBookIssueForSubscription(db, subscription.id, new Date(subscription.nextIssueAt), childId);
+      await startIssueWorkflow(db, env, issue.id);
+    }
+  }
+}
+
+async function startIssueWorkflow(db: Db, env: Env, bookIssueId: string) {
+  const issue = await db.query.bookIssues.findFirst({ where: eq(bookIssues.id, bookIssueId) });
+  if (!issue) throw new Error(`Book issue ${bookIssueId} not found`);
+  const preferences = await db.query.childPreferences.findFirst({ where: eq(childPreferences.childId, issue.childId) });
+  if (!isWorldReady(preferences?.selectedCharacterCastJson)) {
+    await env.BUILD_WORLD_WORKFLOW.create({
+      id: `${bookIssueId}-world-${crypto.randomUUID()}`,
+      params: { childId: issue.childId, firstIssueId: bookIssueId },
+    });
+    return;
+  }
+  await startWorkflow(env, bookIssueId);
+}
+
+const storyRetrySteps: GenerationStepName[] = [
+  "CLAIM_ISSUE",
+  "LOAD_CONTEXT",
+  "GENERATE_OUTLINE",
+  "GENERATE_MANUSCRIPT",
+  "REVISE_MANUSCRIPT",
+  "STORY_QA",
+  "SAVE_BOOK",
+  "GENERATE_ILLUSTRATIONS",
+  "RENDER_PDF",
+  "PERSIST_CANON",
+  "SEND_DELIVERIES",
+  "ADVANCE_SUBSCRIPTION",
+];
+
+async function resetBookIssueForRetry(db: Db, bookIssueId: string) {
+  await db.delete(deliveries).where(eq(deliveries.bookIssueId, bookIssueId));
+  await db.delete(qaResults).where(eq(qaResults.bookIssueId, bookIssueId));
+  await db.delete(episodeSummaries).where(eq(episodeSummaries.bookIssueId, bookIssueId));
+  await db.update(canonEvents).set({ bookIssueId: null }).where(eq(canonEvents.bookIssueId, bookIssueId));
+  await db.delete(books).where(eq(books.bookIssueId, bookIssueId));
+  await db.delete(generationSteps).where(and(eq(generationSteps.bookIssueId, bookIssueId), inArray(generationSteps.step, storyRetrySteps)));
+  await db
+    .update(bookIssues)
+    .set({
+      status: "SCHEDULED",
+      generationStartedAt: null,
+      readyAt: null,
+      deliveredAt: null,
+      lastError: null,
+      updatedAt: new Date().toISOString(),
+    })
+    .where(eq(bookIssues.id, bookIssueId));
+}
+
+async function startWorkflow(env: Env, bookIssueId: string) {
+  await env.GENERATE_BOOK_WORKFLOW.create({
+    id: `${bookIssueId}-${crypto.randomUUID()}`,
+    params: { bookIssueId }
+  });
+}
+
+async function getDashboard(db: Db, userId: string, userEmail: string, childId: string | null = null) {
+  const subscription = childId
+    ? await findSubscriptionForChild(db, userId, childId)
+    : await db.query.subscriptions.findFirst({
+        where: eq(subscriptions.userId, userId),
+        orderBy: (table, { desc: descending }) => [descending(table.createdAt)]
+      });
+  if (!subscription) return null;
+
+  const child = await db.query.children.findFirst({ where: eq(children.id, childId ?? subscription.childId), with: { preferences: true } });
+  const product = await db.query.products.findFirst({ where: eq(products.id, subscription.productId) });
+  if (!child || !product) return null;
+
+  const [clientProduct] = await listProducts(db);
+  const allChildren = await listChildSummaries(db, userId);
+  const bookRecords = await listBooksForUser(db, userId);
+  const clientBooks = await Promise.all(bookRecords.map(async (record) => {
+    if (record.issue.childId !== child.id) return null;
+    const pages = record.book ? await db.select().from(bookPages).where(eq(bookPages.bookId, record.book.id)) : [];
+    return toClientBookIssue(record.issue, record.book, pages);
+  }));
+  const childBooks = clientBooks.filter((book): book is NonNullable<typeof book> => Boolean(book));
+  const currentIssue = childBooks.find((book) => book.status !== "DELIVERED") ?? childBooks[0];
+  if (!clientProduct || !currentIssue) return null;
+  const methods = await db.select().from(subscriptionDeliveryMethods).where(and(eq(subscriptionDeliveryMethods.subscriptionId, subscription.id), eq(subscriptionDeliveryMethods.enabled, true)));
+
+  const user = await db.query.users.findFirst({ where: eq(users.id, userId) });
+
+  return {
+    user: { id: userId, email: userEmail, name: user?.name ?? "" },
+    children: allChildren,
+    child: {
+      id: child.id,
+      firstName: child.firstName,
+      birthDate: child.birthDate,
+      ageRange: child.ageRange,
+      readingLevel: normalizeReadingLevel(child.readingLevel),
+      storyGenres: parseJson(child.preferences?.storyGenresJson ?? "[]", stringArraySchema),
+      interests: parseJson(child.preferences?.interestsJson ?? "[]", stringArraySchema),
+      favoriteCharacters: parseJson(child.preferences?.favoriteCharacterIdsJson ?? "[]", stringArraySchema),
+      selectedCharacters: parseJson(child.preferences?.selectedCharacterCastJson ?? "[]", z.array(z.object({
+        characterId: z.string(),
+        sourceCharacterId: z.string().nullable().optional(),
+        displayName: z.string(),
+        species: z.string().nullable().optional(),
+        description: z.string().nullable().optional(),
+        personality: z.string().nullable().optional(),
+        profileImageUrls: z.array(z.string()).optional(),
+        imageStatus: z.enum(["PENDING", "READY", "FAILED"]).optional(),
+        role: z.enum(["MAIN", "SUPPORTING"])
+      }))),
+      charactersLockedAt: child.preferences?.charactersLockedAt ?? null,
+      worldBuildStatus: isWorldReady(child.preferences?.selectedCharacterCastJson) ? "READY" : "BUILDING",
+      parentNotes: child.preferences?.optionalParentNotes ?? ""
+    },
+    subscription: {
+      id: subscription.id,
+      status: subscription.status,
+      product: clientProduct,
+      frequency: subscription.frequency,
+      childSlots: subscription.childSlots,
+      usedChildSlots: await countUsedChildSlots(db, subscription.id),
+      nextIssueAt: subscription.nextIssueAt,
+      nextPaymentAt: subscription.nextIssueAt,
+      lastIssueAt: subscription.lastIssueAt,
+      deliveryMethods: methods.map((method) => method.method)
+    },
+    currentIssue,
+    books: childBooks,
+    relationships: await listRelationshipsForUser(db, userId)
+  };
+}
+
+async function findSubscriptionForChild(db: Db, userId: string, childId: string) {
+  const slot = await db
+    .select({ subscription: subscriptions })
+    .from(subscriptionChildSlots)
+    .innerJoin(subscriptions, eq(subscriptions.id, subscriptionChildSlots.subscriptionId))
+    .where(and(eq(subscriptions.userId, userId), eq(subscriptionChildSlots.childId, childId), eq(subscriptionChildSlots.status, "ACTIVE")))
+    .get();
+  if (slot) return slot.subscription;
+  return db.query.subscriptions.findFirst({ where: and(eq(subscriptions.userId, userId), eq(subscriptions.childId, childId)) });
+}
+
+async function listProducts(db: Db) {
+  const productRows = await db.select().from(products).where(eq(products.active, true));
+  const universeRows = await db.select().from(universes).where(eq(universes.active, true));
+  const characterRows = await db.select().from(characters).where(eq(characters.active, true));
+  const deliveryRows = await db.select().from(productDeliveryOptions);
+
+  return productRows.map((product) => {
+    const universe = universeRows.find((row) => row.id === product.universeId);
+    return {
+      id: product.id,
+      slug: product.slug,
+      name: product.name,
+      frequencyLabel: product.frequency.toLowerCase(),
+      universe: {
+        id: universe?.id ?? product.universeId,
+        slug: universe?.slug ?? "",
+        name: universe?.name ?? "Story World",
+        description: universe?.description ?? "",
+        locations: [],
+        characters: characterRows.filter((character) => character.universeId === product.universeId).map(toClientCharacter)
+      },
+      deliveryOptions: deliveryRows.filter((option) => option.productId === product.id).map((option) => ({
+        method: option.method,
+        availability: option.availability,
+        label: option.method === "EMAIL" ? "Email PDF" : "Printed mail",
+        description: option.method === "EMAIL" ? "A secure download link arrives automatically." : "Physical storybooks are planned for a future release."
+      }))
+    };
+  });
+}
+
+async function listChildSummaries(db: Db, userId: string) {
+  const rows = await listChildrenForUser(db, userId);
+  const subscriptionRows = await db.select().from(subscriptions).where(eq(subscriptions.userId, userId));
+  const slotRows = await db.select().from(subscriptionChildSlots).innerJoin(subscriptions, eq(subscriptions.id, subscriptionChildSlots.subscriptionId)).where(eq(subscriptions.userId, userId));
+  const issueRows = await db
+    .select({ issue: bookIssues })
+    .from(bookIssues)
+    .innerJoin(subscriptions, eq(subscriptions.id, bookIssues.subscriptionId))
+    .where(eq(subscriptions.userId, userId));
+
+  return rows.map((child) => {
+    const activeSlot = slotRows.find((row) => row.subscription_child_slots.childId === child.id && row.subscription_child_slots.status === "ACTIVE");
+    const activeSubscription = activeSlot
+      ? subscriptionRows.find((subscription) => subscription.id === activeSlot.subscription_child_slots.subscriptionId) ?? null
+      : subscriptionRows.find((subscription) => subscription.childId === child.id && subscription.status === "ACTIVE") ?? null;
+    const latestIssue = issueRows
+      .map((row) => row.issue)
+      .filter((issue) => issue.childId === child.id)
+      .sort((left, right) => right.episodeNumber - left.episodeNumber)[0] ?? null;
+
+    return {
+      id: child.id,
+      firstName: child.firstName,
+      birthDate: child.birthDate,
+      ageRange: child.ageRange,
+      readingLevel: normalizeReadingLevel(child.readingLevel),
+      worldBuildStatus: isWorldReady(child.preferences?.selectedCharacterCastJson) ? "READY" : "BUILDING",
+      activeSubscriptionId: activeSubscription?.id ?? null,
+      latestBookIssueId: latestIssue?.id ?? null,
+      latestBookStatus: latestIssue?.status ?? null,
+      archivedAt: null
+    };
+  });
+}
+
+async function countUsedChildSlots(db: Db, subscriptionId: string) {
+  const slots = await db.select().from(subscriptionChildSlots).where(and(eq(subscriptionChildSlots.subscriptionId, subscriptionId), eq(subscriptionChildSlots.status, "ACTIVE")));
+  return slots.length;
+}
+
+async function listAdminUsers(db: Db) {
+  const rows = await db.select().from(users).orderBy(desc(users.createdAt)).limit(100);
+  const childRows = await db.select().from(children);
+  const subscriptionRows = await db.select().from(subscriptions);
+  const roleRows = await db.select().from(userRoles);
+  return rows.map((user) => ({
+    id: user.id,
+    email: user.email,
+    name: user.name,
+    roles: roleRows.filter((role) => role.userId === user.id).map((role) => role.role),
+    childrenCount: childRows.filter((child) => child.userId === user.id).length,
+    subscriptionsCount: subscriptionRows.filter((subscription) => subscription.userId === user.id).length,
+    createdAt: user.createdAt,
+  }));
+}
+
+async function listAdminChildren(db: Db) {
+  const records = await db
+    .select({ child: children, preferences: childPreferences, user: users })
+    .from(children)
+    .innerJoin(users, eq(users.id, children.userId))
+    .leftJoin(childPreferences, eq(childPreferences.childId, children.id))
+    .orderBy(desc(children.createdAt))
+    .limit(100);
+  const slotRows = await db.select().from(subscriptionChildSlots).where(eq(subscriptionChildSlots.status, "ACTIVE"));
+  const issueRows = await db.select().from(bookIssues).orderBy(desc(bookIssues.createdAt));
+
+  return records.map((record) => {
+    const selected = parseJson(record.preferences?.selectedCharacterCastJson ?? "[]", z.array(z.object({ characterId: z.string(), profileImageUrls: z.array(z.string()).optional(), imageStatus: z.string().optional() })));
+    const activeSlot = slotRows.find((slot) => slot.childId === record.child.id);
+    const latestIssue = issueRows.find((issue) => issue.childId === record.child.id);
+    return {
+      id: record.child.id,
+      parentEmail: record.user.email,
+      firstName: record.child.firstName,
+      birthDate: record.child.birthDate,
+      ageRange: record.child.ageRange,
+      readingLevel: record.child.readingLevel,
+      worldBuildStatus: isWorldReady(record.preferences?.selectedCharacterCastJson) ? "READY" : "BUILDING",
+      selectedCharacterCount: selected.length,
+      activeSubscriptionId: activeSlot?.subscriptionId ?? null,
+      latestIssueStatus: latestIssue?.status ?? null,
+      createdAt: record.child.createdAt,
+    };
+  });
+}
+
+async function listAdminSubscriptions(db: Db) {
+  const records = await db
+    .select({ subscription: subscriptions, product: products, user: users })
+    .from(subscriptions)
+    .innerJoin(users, eq(users.id, subscriptions.userId))
+    .innerJoin(products, eq(products.id, subscriptions.productId))
+    .orderBy(desc(subscriptions.createdAt))
+    .limit(100);
+  const slotRows = await db.select().from(subscriptionChildSlots).where(eq(subscriptionChildSlots.status, "ACTIVE"));
+  const methodRows = await db.select().from(subscriptionDeliveryMethods).where(eq(subscriptionDeliveryMethods.enabled, true));
+
+  return records.map((record) => ({
+    id: record.subscription.id,
+    parentEmail: record.user.email,
+    status: record.subscription.status,
+    productName: record.product.name,
+    frequency: record.subscription.frequency,
+    childSlots: record.subscription.childSlots,
+    usedChildSlots: slotRows.filter((slot) => slot.subscriptionId === record.subscription.id).length,
+    deliveryMethods: methodRows.filter((method) => method.subscriptionId === record.subscription.id).map((method) => method.method),
+    nextIssueAt: record.subscription.nextIssueAt,
+    lastIssueAt: record.subscription.lastIssueAt,
+    createdAt: record.subscription.createdAt,
+  }));
+}
+
+async function listAdminIssues(db: Db) {
+  const records = await db
+    .select({ issue: bookIssues, book: books, child: children, subscription: subscriptions, user: users })
+    .from(bookIssues)
+    .innerJoin(subscriptions, eq(subscriptions.id, bookIssues.subscriptionId))
+    .innerJoin(users, eq(users.id, subscriptions.userId))
+    .innerJoin(children, eq(children.id, bookIssues.childId))
+    .leftJoin(books, eq(books.bookIssueId, bookIssues.id))
+    .orderBy(desc(bookIssues.createdAt))
+    .limit(100);
+
+  return Promise.all(records.map(async (record) => {
+    const pages = record.book ? await db.select().from(bookPages).where(eq(bookPages.bookId, record.book.id)) : [];
+    const workflow = await db.select().from(generationSteps).where(eq(generationSteps.bookIssueId, record.issue.id));
+    const qa = await db.select().from(qaResults).where(eq(qaResults.bookIssueId, record.issue.id));
+    const attempts = await db.select().from(deliveries).where(eq(deliveries.bookIssueId, record.issue.id));
+    return {
+      ...toClientBookIssue(record.issue, record.book, pages, workflow),
+      childLabel: record.child.firstName ?? `Ages ${record.child.ageRange}`,
+      parentEmail: record.user.email,
+      qaResult: qa.some((result) => !result.passed) ? "FAIL" : record.issue.status === "GENERATING" ? "REVIEW" : "PASS",
+      rawError: record.issue.lastError,
+      deliveryAttempts: attempts.map((attempt) => ({
+        id: attempt.id,
+        method: attempt.method,
+        status: attempt.status,
+        attemptedAt: attempt.createdAt,
+        detail: attempt.lastError ?? attempt.providerReference ?? attempt.status
+      }))
+    };
+  }));
+}
+
+async function getAdminIssue(db: Db, issueId: string) {
+  const issues = await listAdminIssues(db);
+  return issues.find((issue) => issue.id === issueId) ?? null;
+}
+
+function toClientBookIssue(
+  issue: typeof bookIssues.$inferSelect,
+  book?: typeof books.$inferSelect | null,
+  pages: Array<typeof bookPages.$inferSelect> = [],
+  workflow: Array<typeof generationSteps.$inferSelect> = []
+) {
+  return {
+    id: issue.id,
+    supportCode: supportCode(issue.id),
+    episodeNumber: issue.episodeNumber,
+    title: book?.title ?? `Episode ${issue.episodeNumber}`,
+    subtitle: book?.subtitle ?? null,
+    status: issue.status,
+    scheduledFor: issue.scheduledFor,
+    readyAt: issue.readyAt,
+    deliveredAt: issue.deliveredAt,
+    coverUrl: assetUrl(pages.find((page) => page.pageType === "COVER")?.illustrationAssetId),
+    pdfUrl: book?.pdfAssetId ? `/api/assets/${book.pdfAssetId}/download` : null,
+    summary: book ? summarizeBook(book.storyJson) : "This episode is scheduled.",
+    pages: pages.map((page) => ({
+      id: page.id,
+      pageNumber: page.pageNumber,
+      pageType: page.pageType,
+      text: page.text,
+      illustrationUrl: assetUrl(page.illustrationAssetId)
+    })),
+    workflow: workflow.map((step) => ({
+      id: step.id,
+      label: generationStepLabels[step.step as GenerationStepName] ?? step.step,
+      status: normalizeStepStatus(step.status),
+      timestamp: step.completedAt ?? step.startedAt
+    }))
+  };
+}
+
+function supportCode(issueId: string) {
+  return `LW-${issueId.replace(/[^a-z0-9]/gi, "").slice(-8).toUpperCase()}`;
+}
+
+function isWorldReady(selectedCharacterCastJson?: string | null) {
+  const selected = parseJson(selectedCharacterCastJson ?? "[]", z.array(z.object({
+    profileImageUrls: z.array(z.string()).optional(),
+    imageStatus: z.enum(["PENDING", "READY", "FAILED"]).optional()
+  })));
+  return selected.length > 0 && selected.every((character) => character.imageStatus === "READY" && (character.profileImageUrls?.length ?? 0) >= 3);
+}
+
+function toClientCharacter(character: typeof characters.$inferSelect) {
+  const profilePointers = parseJson(character.profileImagesJson, stringArraySchema).slice(0, 3);
+  return {
+    id: character.id,
+    name: character.name,
+    species: speciesFromVisualDescription(character.visualDescriptionJson),
+    description: character.description,
+    personality: character.personality,
+    portraitUrl: r2PublicUrl(profilePointers[0]),
+    profileImages: profilePointers.map(r2PublicUrl),
+    hiddenStyleReferenceIds: parseJson(character.hiddenStyleReferencesJson, stringArraySchema),
+    color: "#6f8f52"
+  };
+}
+
+function assetUrl(assetId?: string | null) {
+  return assetId ? `/api/assets/${assetId}/download` : "";
+}
+
+async function userOwnsCharacterAsset(db: Db, userId: string, assetId: string) {
+  const rows = await db
+    .select({ selectedCharacterCastJson: childPreferences.selectedCharacterCastJson })
+    .from(childPreferences)
+    .innerJoin(children, eq(children.id, childPreferences.childId))
+    .where(eq(children.userId, userId));
+
+  return rows.some((row) => {
+    const cast = parseJson(row.selectedCharacterCastJson, z.array(z.object({ profileImageUrls: z.array(z.string()).optional() })));
+    return cast.some((character) => character.profileImageUrls?.some((url) => url.includes(`/api/assets/${assetId}/download`)));
+  });
+}
+
+function r2PublicUrl(pointer?: string) {
+  if (!pointer) return "";
+  return `/api/r2/${pointer.replace("r2://book-assets/", "")}`;
+}
+
+function speciesFromVisualDescription(value: string) {
+  const parsed = JSON.parse(value) as { species?: string };
+  return parsed.species ?? "Friend";
+}
+
+function summarizeBook(storyJson: string) {
+  const parsed = JSON.parse(storyJson) as { pages?: Array<{ text?: string }> };
+  return parsed.pages?.[0]?.text ?? "A new story is ready.";
+}
+
+function normalizeReadingLevel(value: string | null) {
+  if (value === "pre") return "Pre-reader";
+  if (value === "early") return "Early reader";
+  if (value === "growing") return "Growing reader";
+  return value;
+}
+
+function normalizeStepStatus(status: string) {
+  if (status === "COMPLETED") return "COMPLETE";
+  if (status === "RUNNING") return "CURRENT";
+  if (status === "FAILED") return "FAILED";
+  return "PENDING";
+}

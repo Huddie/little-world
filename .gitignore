@@ -1,0 +1,69 @@
+# Dependencies
+node_modules/
+.pnp/
+.pnp.cjs
+.yarn/cache/
+.yarn/unplugged/
+.yarn/build-state.yml
+.yarn/install-state.gz
+.pnpm-store/
+
+# Build output
+dist/
+build/
+coverage/
+.vite/
+*.tsbuildinfo
+
+# Cloudflare / Wrangler local state
+.wrangler/
+.dev.vars
+.dev.vars.*
+!.dev.vars.example
+worker-configuration.d.ts
+
+# Environment and secrets
+.env
+.env.*
+!.env.example
+*.local
+*.pem
+*.key
+*.crt
+*.p12
+*.pfx
+
+# Logs and diagnostics
+logs/
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+wrangler-tail*.txt
+
+# Local databases and generated assets
+*.sqlite
+*.sqlite3
+*.db
+*.db-shm
+*.db-wal
+tmp/
+temp/
+out/
+img-dump/
+
+# OS / editor
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/*
+!.vscode/extensions.json
+!.vscode/settings.json
+*.swp
+*.swo
+
+# Test runners
+playwright-report/
+test-results/
+.nyc_output/

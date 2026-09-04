@@ -1,0 +1,23 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" role="img" aria-label="Little World">
+  <defs>
+    <linearGradient id="sky" x1="26" x2="104" y1="16" y2="112" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#88d7ff"/>
+      <stop offset="1" stop-color="#3aa7db"/>
+    </linearGradient>
+    <linearGradient id="hill" x1="20" x2="110" y1="62" y2="104" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#9bd85a"/>
+      <stop offset="1" stop-color="#5f9f43"/>
+    </linearGradient>
+  </defs>
+  <circle cx="64" cy="64" r="56" fill="#fff8df"/>
+  <circle cx="64" cy="64" r="48" fill="url(#sky)"/>
+  <path d="M19 78c11-17 26-25 45-25s34 8 45 25c-8 21-24 34-45 34S27 99 19 78Z" fill="url(#hill)"/>
+  <path d="M31 84c9 5 20 8 33 8s24-3 33-8v12c-9 7-20 11-33 11s-24-4-33-11V84Z" fill="#fff3ca"/>
+  <path d="M31 96c9 6 20 9 33 9s24-3 33-9" fill="none" stroke="#e8c875" stroke-width="4" stroke-linecap="round"/>
+  <path d="M44 70c0-8 6-14 14-14s14 6 14 14v23H44V70Z" fill="#fff7dc"/>
+  <path d="M49 70c0-5 4-9 9-9s9 4 9 9" fill="none" stroke="#6f8f52" stroke-width="4" stroke-linecap="round"/>
+  <rect x="52" y="76" width="12" height="17" rx="6" fill="#d97745"/>
+  <circle cx="94" cy="35" r="11" fill="#ffd45a"/>
+  <path d="M94 16v8M94 46v8M75 35h8M105 35h8" stroke="#ffd45a" stroke-width="6" stroke-linecap="round"/>
+  <path d="m92 58 4 8 8 4-8 4-4 8-4-8-8-4 8-4 4-8Z" fill="#fff4a8"/>
+</svg>

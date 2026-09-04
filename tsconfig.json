@@ -1,0 +1,28 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "lib": ["ES2022", "WebWorker"],
+    "module": "ESNext",
+    "moduleResolution": "Bundler",
+    "strict": true,
+    "noUncheckedIndexedAccess": true,
+    "exactOptionalPropertyTypes": true,
+    "skipLibCheck": true,
+    "types": ["@cloudflare/workers-types"],
+    "baseUrl": ".",
+    "paths": {
+      "@/*": ["src/*"]
+    }
+  },
+  "include": [
+    "src/ai/**/*.ts",
+    "src/domain/**/*.ts",
+    "src/email/**/*.ts",
+    "src/rendering/**/*.ts",
+    "src/server/**/*.ts",
+    "src/storage/**/*.ts",
+    "src/workflows/**/*.ts",
+    "src/index.ts"
+  ],
+  "exclude": ["src/**/*.test.ts"]
+}

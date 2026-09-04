@@ -1,0 +1,8 @@
+APP_BASE_URL=http://localhost:8787
+RESEND_FROM_EMAIL=Little World <stories@example.com>
+ADMIN_EMAILS=you@example.com
+ENABLE_CLOUDFLARE_ACCESS_AUTH=false
+
+OPENAI_API_KEY=
+RESEND_API_KEY=
+BETTER_AUTH_SECRET=
