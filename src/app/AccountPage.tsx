@@ -10,6 +10,7 @@ import { apiClient } from "../lib/api-client";
 import { formatDate } from "../lib/format";
 import { ApiError } from "../lib/http-api-client";
 import { useAsyncResource } from "../lib/use-async-resource";
+import type { DeliveryDayOfWeek } from "../types/client";
 
 export function AccountPage() {
   const dashboard = useAsyncResource(() => apiClient.getDashboard(), []);
@@ -43,7 +44,7 @@ export function AccountPage() {
     return <ErrorState message={dashboard.error.message} onRetry={dashboard.reload} title="Could not load account" />;
   }
 
-  const { child, children, subscription, user } = dashboard.data;
+  const { children, subscription, user } = dashboard.data;
   const deliveryMethods = subscription.deliveryMethods.map((method) => method === "EMAIL" ? "Email" : "Printed book").join(", ");
 
   return (
@@ -70,6 +71,9 @@ export function AccountPage() {
           <p className="mt-4 flex items-center gap-2 text-sm font-semibold text-moss-800 dark:text-slate-200">
             <CalendarDays size={16} />
             Next story {formatDate(subscription.nextIssueAt)}
+          </p>
+          <p className="mt-2 text-sm font-semibold text-moss-800 dark:text-slate-200">
+            Delivery day: {weekdayLabel(subscription.deliveryDayOfWeek)}
           </p>
           <p className="mt-2 flex items-center gap-2 text-sm font-semibold text-moss-800 dark:text-slate-200">
             <CreditCard size={16} />
@@ -112,15 +116,6 @@ export function AccountPage() {
           </p>
         </Card>
       </div>
-
-      <Card className="p-5">
-        <h2 className="text-lg font-black">Story profile</h2>
-        <div className="mt-4 grid gap-3 text-sm text-moss-700 dark:text-slate-300 sm:grid-cols-3">
-          <p><span className="font-bold text-moss-900 dark:text-slate-100">Child:</span> {child.firstName || "Not provided"}</p>
-          <p><span className="font-bold text-moss-900 dark:text-slate-100">Birthday:</span> {formatDate(child.birthDate)}</p>
-          <p><span className="font-bold text-moss-900 dark:text-slate-100">Age range:</span> {child.ageRange}</p>
-        </div>
-      </Card>
 
       <Card className="p-5">
         <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
@@ -346,11 +341,13 @@ function SubscriptionModal({
   const [error, setError] = useState<Error | null>(null);
   const [selectedDeliveryMethods, setSelectedDeliveryMethods] = useState(subscription.deliveryMethods);
   const [selectedFrequency, setSelectedFrequency] = useState(subscription.frequency);
+  const [selectedDeliveryDay, setSelectedDeliveryDay] = useState<DeliveryDayOfWeek>(subscription.deliveryDayOfWeek ?? 5);
   const [selectedDeliveryEmail, setSelectedDeliveryEmail] = useState(subscription.deliveryEmail ?? "");
   const deliveryChanged = !sameDeliveryMethods(selectedDeliveryMethods, subscription.deliveryMethods);
   const frequencyChanged = selectedFrequency !== subscription.frequency;
+  const deliveryDayChanged = selectedDeliveryDay !== (subscription.deliveryDayOfWeek ?? 5);
   const deliveryEmailChanged = normalizeOptionalEmail(selectedDeliveryEmail) !== normalizeOptionalEmail(subscription.deliveryEmail ?? "");
-  const canSave = selectedDeliveryMethods.length > 0 && (deliveryChanged || frequencyChanged || deliveryEmailChanged);
+  const canSave = selectedDeliveryMethods.length > 0 && (deliveryChanged || frequencyChanged || deliveryDayChanged || deliveryEmailChanged);
   const canPause = subscription.status === "ACTIVE";
   const canResume = subscription.status === "PAUSED";
   const canCancel = subscription.status !== "CANCELLED";
@@ -367,8 +364,11 @@ function SubscriptionModal({
   function saveChanges() {
     run("save", async () => {
       const tasks: Array<Promise<unknown>> = [];
-      if (frequencyChanged) {
-        tasks.push(apiClient.updateSubscriptionFrequency(subscription.id, selectedFrequency));
+      if (frequencyChanged || deliveryDayChanged) {
+        tasks.push(apiClient.updateSubscriptionSchedule(subscription.id, {
+          frequency: selectedFrequency,
+          deliveryDayOfWeek: selectedDeliveryDay,
+        }));
       }
       if (deliveryChanged) {
         tasks.push(apiClient.updateSubscriptionDeliveryMethods(subscription.id, selectedDeliveryMethods));
@@ -397,6 +397,7 @@ function SubscriptionModal({
         <div className="grid gap-3 rounded-lg border border-moon-200 p-4 text-sm dark:border-white/10">
           <p><span className="font-bold">Status:</span> {subscription.status}</p>
           <p><span className="font-bold">Cadence:</span> {frequencyLabel(subscription.frequency)}</p>
+          <p><span className="font-bold">Delivery day:</span> {weekdayLabel(subscription.deliveryDayOfWeek)}</p>
           <p><span className="font-bold">Children:</span> {subscription.usedChildSlots} of {subscription.childSlots} slots used</p>
           <p><span className="font-bold">Next story:</span> {formatDate(subscription.nextIssueAt)}</p>
           <p><span className="font-bold">Next payment:</span> {formatDate(subscription.nextPaymentAt)}</p>
@@ -419,6 +420,18 @@ function SubscriptionModal({
             <option value="WEEKLY">Weekly</option>
             <option value="BIWEEKLY">Bi-weekly</option>
             <option value="MONTHLY">Monthly</option>
+          </select>
+          <label className="mt-3 block text-xs font-bold uppercase tracking-wide text-moss-700 dark:text-slate-300" htmlFor="subscription-delivery-day">
+            Delivery day
+          </label>
+          <select
+            className="mt-2 h-11 w-full rounded-lg border border-moon-200 bg-white px-3 text-sm font-semibold text-moss-900 outline-none transition focus:border-moon-400 focus:ring-4 focus:ring-moon-100 dark:border-white/10 dark:bg-slate-900 dark:text-white"
+            disabled={Boolean(busyAction)}
+            id="subscription-delivery-day"
+            onChange={(event) => setSelectedDeliveryDay(Number(event.target.value) as DeliveryDayOfWeek)}
+            value={selectedDeliveryDay}
+          >
+            {weekdays.map((day) => <option key={day.value} value={day.value}>{day.label}</option>)}
           </select>
         </div>
 
@@ -511,6 +524,20 @@ function frequencyLabel(frequency: "WEEKLY" | "BIWEEKLY" | "MONTHLY") {
   if (frequency === "WEEKLY") return "Weekly";
   if (frequency === "BIWEEKLY") return "Bi-weekly";
   return "Monthly";
+}
+
+const weekdays = [
+  { value: 0, label: "Sunday" },
+  { value: 1, label: "Monday" },
+  { value: 2, label: "Tuesday" },
+  { value: 3, label: "Wednesday" },
+  { value: 4, label: "Thursday" },
+  { value: 5, label: "Friday" },
+  { value: 6, label: "Saturday" },
+] as const;
+
+function weekdayLabel(value?: number) {
+  return weekdays.find((day) => day.value === value)?.label ?? "Friday";
 }
 
 function childAccountLabel(firstName: string | null, index: number) {

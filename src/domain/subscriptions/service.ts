@@ -1,15 +1,15 @@
 import { and, eq, lte } from "drizzle-orm";
 import { createBookIssueForSubscription } from "../books/service";
 import { newId } from "../ids";
-import { nextIssueDate } from "../scheduling/schedule";
-import type { DeliveryMethod, SubscriptionFrequency } from "../types";
+import { alignToWeekday, nextScheduledDelivery } from "../scheduling/schedule";
+import type { DeliveryMethod, SubscriptionFrequency, Weekday } from "../types";
 import type { Db } from "../../server/db/client";
 import { children, productDeliveryOptions, products, subscriptionChildSlots, subscriptionDeliveryMethods, subscriptions } from "../../server/db/schema";
 
 export async function createSubscription(
   db: Db,
   userId: string,
-  input: { childId: string; productId: string; deliveryMethods: DeliveryMethod[] },
+  input: { childId: string; productId: string; deliveryMethods: DeliveryMethod[]; deliveryDayOfWeek?: Weekday },
   now = new Date()
 ) {
   const child = await db.query.children.findFirst({ where: and(eq(children.id, input.childId), eq(children.userId, userId)) });
@@ -41,7 +41,9 @@ export async function createSubscription(
       status: "ACTIVE",
       frequency: product.frequency,
       childSlots: 3,
-      nextIssueAt: now.toISOString()
+      deliveryDayOfWeek: input.deliveryDayOfWeek ?? 5,
+      generationLeadHours: 24,
+      nextIssueAt: alignToWeekday(now, input.deliveryDayOfWeek ?? 5).toISOString()
     });
     subscription = await db.query.subscriptions.findFirst({ where: eq(subscriptions.id, id) });
   }
@@ -65,7 +67,7 @@ export async function createSubscription(
       .onConflictDoUpdate({ target: [subscriptionDeliveryMethods.subscriptionId, subscriptionDeliveryMethods.method], set: { enabled: true } });
   }
 
-  const issue = await createBookIssueForSubscription(db, subscription.id, now, child.id);
+  const issue = await createBookIssueForSubscription(db, subscription.id, new Date(subscription.nextIssueAt), child.id);
   return { subscription, firstIssue: issue };
 }
 
@@ -113,7 +115,27 @@ export async function updateSubscriptionFrequency(
   if (!subscription) throw new Response("Subscription not found", { status: 404 });
   await db.update(subscriptions).set({
     frequency,
-    nextIssueAt: nextIssueDate(now, frequency).toISOString(),
+    nextIssueAt: nextScheduledDelivery(now, frequency, normalizeWeekday(subscription.deliveryDayOfWeek)).toISOString(),
+    updatedAt: now.toISOString(),
+  }).where(eq(subscriptions.id, subscription.id));
+  return { ok: true };
+}
+
+export async function updateSubscriptionSchedule(
+  db: Db,
+  userId: string,
+  subscriptionId: string,
+  input: { frequency?: SubscriptionFrequency; deliveryDayOfWeek?: Weekday },
+  now = new Date()
+) {
+  const subscription = await db.query.subscriptions.findFirst({ where: and(eq(subscriptions.id, subscriptionId), eq(subscriptions.userId, userId)) });
+  if (!subscription) throw new Response("Subscription not found", { status: 404 });
+  const frequency = input.frequency ?? subscription.frequency as SubscriptionFrequency;
+  const deliveryDayOfWeek = input.deliveryDayOfWeek ?? normalizeWeekday(subscription.deliveryDayOfWeek);
+  await db.update(subscriptions).set({
+    frequency,
+    deliveryDayOfWeek,
+    nextIssueAt: nextScheduledDelivery(now, frequency, deliveryDayOfWeek).toISOString(),
     updatedAt: now.toISOString(),
   }).where(eq(subscriptions.id, subscription.id));
   return { ok: true };
@@ -149,7 +171,7 @@ export async function advanceSubscriptionAfterIssue(db: Db, subscriptionId: stri
   if (new Date(subscription.nextIssueAt).getTime() > issueDate.getTime()) {
     return { advanced: false, nextIssueAt: subscription.nextIssueAt };
   }
-  const nextIssueAt = nextIssueDate(issueDate, subscription.frequency as SubscriptionFrequency).toISOString();
+  const nextIssueAt = nextScheduledDelivery(issueDate, subscription.frequency as SubscriptionFrequency, normalizeWeekday(subscription.deliveryDayOfWeek)).toISOString();
   await db
     .update(subscriptions)
     .set({
@@ -158,4 +180,8 @@ export async function advanceSubscriptionAfterIssue(db: Db, subscriptionId: stri
     })
     .where(eq(subscriptions.id, subscriptionId));
   return { advanced: true, nextIssueAt };
+}
+
+function normalizeWeekday(value: number): Weekday {
+  return value >= 0 && value <= 6 ? value as Weekday : 5;
 }

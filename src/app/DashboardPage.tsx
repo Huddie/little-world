@@ -1,4 +1,4 @@
-import { CalendarDays, Link2, Lock, Mail, PencilLine, Sparkles } from "lucide-react";
+import { CalendarDays, Link2, Lock, Mail, Sparkles } from "lucide-react";
 import { useEffect, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import { CharacterProfileModal } from "../components/characters/CharacterProfileModal";
@@ -8,7 +8,7 @@ import { Button } from "../components/ui/Button";
 import { Card } from "../components/ui/Card";
 import { EmptyState } from "../components/ui/EmptyState";
 import { ErrorState } from "../components/ui/ErrorState";
-import { Field, Textarea, TextInput } from "../components/ui/Form";
+import { Field, Select, TextInput } from "../components/ui/Form";
 import { LoadingState } from "../components/ui/LoadingState";
 import { StatusBadge } from "../components/ui/StatusBadge";
 import { apiClient } from "../lib/api-client";
@@ -21,23 +21,31 @@ export function DashboardPage() {
   const { childId } = useParams<{ childId: string }>();
   const dashboard = useAsyncResource(() => apiClient.getDashboard(childId), [childId]);
   const [cachedDashboard, setCachedDashboard] = useState<DashboardData | null>(() => readCachedDashboard());
-  const [notes, setNotes] = useState("");
-  const [saved, setSaved] = useState(false);
   const [selectedCastMember, setSelectedCastMember] = useState<SelectedCharacter | null>(null);
   const [inviteEmail, setInviteEmail] = useState("");
+  const [inviteChildSelections, setInviteChildSelections] = useState<Record<string, string>>({});
   const [relationshipError, setRelationshipError] = useState<Error | null>(null);
   const [relationshipBusy, setRelationshipBusy] = useState(false);
 
   useEffect(() => {
     if (dashboard.status === "success") {
       window.sessionStorage.setItem("little-world:active-child-id", dashboard.data.child.id);
-      setNotes(dashboard.data.child.parentNotes);
       setCachedDashboard(dashboard.data);
       writeCachedDashboard(dashboard.data);
     }
   }, [dashboard.status, dashboard.data]);
 
   const data = dashboard.status === "success" ? dashboard.data : cachedDashboard;
+  const autoRefreshNeeded = data ? shouldAutoRefreshDashboard(data) : false;
+  const currentIssueId = data?.currentIssue.id;
+  const currentIssueStatus = data?.currentIssue.status;
+  const worldBuildStatus = data?.child.worldBuildStatus;
+
+  useEffect(() => {
+    if (!autoRefreshNeeded) return;
+    const timer = window.setInterval(() => dashboard.reload(), 10000);
+    return () => window.clearInterval(timer);
+  }, [autoRefreshNeeded, currentIssueId, currentIssueStatus, worldBuildStatus, dashboard.reload]);
 
   if (dashboard.status === "loading" && !data) {
     return <DashboardSkeleton />;
@@ -228,9 +236,24 @@ export function DashboardPage() {
                     <StatusBadge status={relationship.status === "ACTIVE" ? "ACTIVE" : relationship.status === "PENDING" ? "SCHEDULED" : "FAILED"} />
                   </div>
                   {relationship.canAccept ? (
-                    <div className="mt-3 flex gap-2">
-                      <Button disabled={relationshipBusy} onClick={() => updateRelationship(relationship.id, "ACTIVE")} variant="secondary">Accept</Button>
-                      <Button disabled={relationshipBusy} onClick={() => updateRelationship(relationship.id, "REJECTED")} variant="ghost">Decline</Button>
+                    <div className="mt-3 grid gap-3">
+                      <Field hint="Only this child’s world will be connected." label="Connect child">
+                        <Select
+                          disabled={relationshipBusy}
+                          onChange={(event) => setInviteChildSelections((current) => ({ ...current, [relationship.id]: event.target.value }))}
+                          value={inviteChildSelections[relationship.id] ?? activeDashboard.child.id}
+                        >
+                          {activeDashboard.children.filter((child) => !child.archivedAt).map((child, index) => (
+                            <option key={child.id} value={child.id}>
+                              {child.firstName?.trim() || `Kid ${index + 1}`}
+                            </option>
+                          ))}
+                        </Select>
+                      </Field>
+                      <div className="flex gap-2">
+                        <Button disabled={relationshipBusy} onClick={() => updateRelationship(relationship.id, "ACTIVE", inviteChildSelections[relationship.id] ?? activeDashboard.child.id)} variant="secondary">Accept</Button>
+                        <Button disabled={relationshipBusy} onClick={() => updateRelationship(relationship.id, "REJECTED")} variant="ghost">Decline</Button>
+                      </div>
                     </div>
                   ) : null}
                 </div>
@@ -252,26 +275,6 @@ export function DashboardPage() {
             </div>
           </Card>
 
-          <Card className="h-fit p-5">
-            <div className="mb-4 flex items-center gap-2">
-              <PencilLine size={18} />
-              <h2 className="text-lg font-bold">Story inspiration</h2>
-            </div>
-            <Field hint="Optional notes can guide future stories. Keep it simple and parent-controlled." label="Parent notes">
-              <Textarea onChange={(event) => setNotes(event.target.value)} value={notes} />
-            </Field>
-            <div className="mt-4 flex items-center justify-between gap-3">
-              <p className="text-xs font-semibold text-moss-700 dark:text-slate-300">{saved ? "Saved for future episodes." : "Used as gentle guidance."}</p>
-              <Button
-                onClick={() => {
-                  void apiClient.saveStoryInspiration(notes).then(() => setSaved(true));
-                }}
-                variant="secondary"
-              >
-                Save notes
-              </Button>
-            </div>
-          </Card>
         </div>
       </section>
       )}
@@ -299,10 +302,10 @@ export function DashboardPage() {
       .finally(() => setRelationshipBusy(false));
   }
 
-  function updateRelationship(id: string, status: "ACTIVE" | "REJECTED") {
+  function updateRelationship(id: string, status: "ACTIVE" | "REJECTED", selectedChildId?: string) {
     setRelationshipBusy(true);
     setRelationshipError(null);
-    void apiClient.updateRelationshipStatus(id, status)
+    void apiClient.updateRelationshipStatus(id, status, selectedChildId)
       .then(dashboard.reload)
       .catch((error: unknown) => setRelationshipError(error instanceof Error ? error : new Error("Could not update invite")))
       .finally(() => setRelationshipBusy(false));
@@ -352,6 +355,11 @@ function parentStatusCopy(status: DashboardData["currentIssue"]["status"]): stri
   if (status === "DELIVERY_PENDING" || status === "READY") return "Almost ready to send";
   if (status === "SCHEDULED") return "Scheduled for creation";
   return "Your next story is being prepared";
+}
+
+function shouldAutoRefreshDashboard(data: DashboardData): boolean {
+  if (data.child.worldBuildStatus === "BUILDING") return true;
+  return data.currentIssue.status !== "DELIVERED";
 }
 
 function resolveSelectedProfile(data: DashboardData, selected: SelectedCharacter): UniverseCharacter | null {

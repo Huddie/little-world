@@ -170,3 +170,56 @@ INSERT OR IGNORE INTO product_delivery_options (id, product_id, method, availabi
 VALUES
   ('delivery_option_moonlight_email', 'product_moonlight_forest_monthly', 'EMAIL', 'ENABLED'),
   ('delivery_option_moonlight_mail', 'product_moonlight_forest_monthly', 'MAIL', 'COMING_SOON');
+
+INSERT OR IGNORE INTO inspiration_sources (
+  id,
+  slug,
+  label,
+  description,
+  kind,
+  provider_key,
+  default_mode,
+  required,
+  enabled,
+  config_json
+) VALUES (
+  'inspiration_source_sefaria_weekly_torah',
+  'weekly-torah-portion',
+  'Weekly Torah portion',
+  'A gentle weekly story inspiration based on the current Torah reading.',
+  'SEFARIA_CALENDAR',
+  'sefaria:parashat_hashavua',
+  'EXPLICIT',
+  1,
+  1,
+  '{"calendarProfile":"DIASPORA","timezone":"America/New_York"}'
+);
+
+INSERT OR IGNORE INTO story_themes (id, slug, label, description, prompt_guidance, age_guidance_json)
+VALUES
+  ('story_theme_kindness', 'kindness', 'Kindness', 'Friends notice what someone needs and help gently.', 'Center the story on small, concrete acts of kindness and warm repair.', '{"1-11 months":"Use soft caring actions and repetition.","2-3":"Keep the need simple and visible."}'),
+  ('story_theme_courage', 'courage', 'Courage', 'A character tries something hard with support.', 'Show courage as taking one safe next step with friends nearby.', '{"1-11 months":"Make the challenge cozy and low-stakes.","2-3":"Avoid danger; use nervousness and reassurance."}'),
+  ('story_theme_gratitude', 'gratitude', 'Gratitude', 'Characters pause to notice gifts, helpers, and good surprises.', 'Use sensory details and a thankful closing beat.', '{}'),
+  ('story_theme_teamwork', 'teamwork', 'Teamwork', 'Friends solve a problem by combining their strengths.', 'Make each locked cast member useful in a way that fits their profile.', '{}'),
+  ('story_theme_welcome', 'welcome', 'Welcoming', 'A new moment feels easier because friends make room.', 'Focus on hospitality, sharing space, and making someone comfortable.', '{}'),
+  ('story_theme_rest', 'rest', 'Rest', 'The world slows down so everyone can feel safe and restored.', 'Use calm pacing, cozy imagery, and a satisfying wind-down.', '{}');
+
+INSERT OR IGNORE INTO inspiration_mappings (
+  id,
+  source_id,
+  item_external_key,
+  theme_id,
+  strength,
+  child_facing_mode,
+  prompt_guidance,
+  safety_notes
+) VALUES (
+  'inspiration_mapping_weekly_torah_default_kindness',
+  'inspiration_source_sefaria_weekly_torah',
+  NULL,
+  'story_theme_kindness',
+  1,
+  'EXPLICIT',
+  'If a weekly Torah portion is selected, mention the parsha by name naturally and translate its ideas into a bright Little World story about kindness, courage, gratitude, teamwork, welcoming, or rest. Do not retell difficult scenes literally.',
+  'Avoid long quotations, frightening punishments, violence, or adult theological claims. Use age-safe values and parent-friendly wording.'
+);

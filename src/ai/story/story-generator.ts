@@ -5,6 +5,7 @@ import { canonExtractionSchema, qaResultSchema, storyManuscriptSchema, storyOutl
 export interface StoryGenerator {
   generateOutline(context: StoryContext): Promise<StoryOutline>;
   generateManuscript(context: StoryContext, outline: StoryOutline): Promise<StoryManuscript>;
+  polishManuscript(context: StoryContext, outline: StoryOutline, manuscript: StoryManuscript): Promise<StoryManuscript>;
   reviseManuscript(context: StoryContext, outline: StoryOutline, manuscript: StoryManuscript, qa: QaResult): Promise<StoryManuscript>;
   reviewStory(context: StoryContext, outline: StoryOutline, manuscript: StoryManuscript): Promise<QaResult>;
   extractCanon(context: StoryContext, manuscript: StoryManuscript): Promise<CanonExtraction>;
@@ -45,6 +46,7 @@ export class MockStoryGenerator implements StoryGenerator {
     const title = outline.title;
     return storyManuscriptSchema.parse({
       title,
+      writingStyle: "rhymed_verse",
       pages: Array.from({ length: 10 }, (_, index) => ({
         pageNumber: index + 1,
         text: storyPageText(index),
@@ -56,6 +58,10 @@ export class MockStoryGenerator implements StoryGenerator {
 
   async reviewStory(): Promise<QaResult> {
     return qaResultSchema.parse({ passed: true, issues: [], revisionGuidance: null });
+  }
+
+  async polishManuscript(_context: StoryContext, _outline: StoryOutline, manuscript: StoryManuscript): Promise<StoryManuscript> {
+    return manuscript;
   }
 
   async reviseManuscript(_context: StoryContext, _outline: StoryOutline, manuscript: StoryManuscript): Promise<StoryManuscript> {

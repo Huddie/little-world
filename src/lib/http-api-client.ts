@@ -1,4 +1,4 @@
-import type { AdminAccess, AdminBookIssue, AdminChildRow, AdminDelivery, AdminFailures, AdminMemory, AdminSubscriptionRow, AdminUserRow, AdminWorldCatalog, BookIssue, ChildSummary, DashboardData, Product, SelectedCharacter, UserProfile } from "../types/client";
+import type { AdminAccess, AdminBookIssue, AdminChildRow, AdminDelivery, AdminFailures, AdminInspirationOverview, AdminMemory, AdminSubscriptionRow, AdminUserRow, AdminWorldCatalog, BookIssue, ChildInspirationSettings, ChildSummary, DashboardData, Product, SelectedCharacter, StoryInspirationCatalog, UserProfile } from "../types/client";
 import type { ApiClient } from "./api-client";
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
@@ -106,6 +106,10 @@ export const httpApiClient: ApiClient = {
     return request<AdminWorldCatalog>("/api/admin/world");
   },
 
+  getAdminInspirationOverview() {
+    return request<AdminInspirationOverview>("/api/admin/inspirations");
+  },
+
   backfillAdminMemory() {
     return request<{ queued: number }>("/api/admin/memory/backfill", { method: "POST" });
   },
@@ -197,6 +201,13 @@ export const httpApiClient: ApiClient = {
     });
   },
 
+  updateSubscriptionSchedule(id, input) {
+    return request<{ ok: true }>(`/api/subscriptions/${id}/schedule`, {
+      method: "PATCH",
+      body: JSON.stringify(input),
+    });
+  },
+
   updateSubscriptionDeliveryEmail(id, deliveryEmail) {
     return request<{ ok: true }>(`/api/subscriptions/${id}/delivery-email`, {
       method: "PATCH",
@@ -238,10 +249,25 @@ export const httpApiClient: ApiClient = {
     });
   },
 
-  updateRelationshipStatus(id, status) {
+  updateRelationshipStatus(id, status, childId) {
     return request<DashboardData["relationships"]>(`/api/relationships/${id}/status`, {
       method: "POST",
-      body: JSON.stringify({ status }),
+      body: JSON.stringify({ status, childId }),
+    });
+  },
+
+  getInspirationCatalog() {
+    return request<StoryInspirationCatalog>("/api/inspirations/catalog");
+  },
+
+  getChildInspirationSettings(childId) {
+    return request<ChildInspirationSettings>(`/api/children/${childId}/inspiration-settings`);
+  },
+
+  updateChildInspirationSettings(childId, input) {
+    return request<ChildInspirationSettings>(`/api/children/${childId}/inspiration-settings`, {
+      method: "PATCH",
+      body: JSON.stringify(input),
     });
   },
 

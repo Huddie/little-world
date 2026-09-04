@@ -1,4 +1,4 @@
-import { AlertTriangle, BookOpen, Brain, Globe2, PackageCheck, RefreshCw, Users } from "lucide-react";
+import { AlertTriangle, BookOpen, Brain, Globe2, Lightbulb, PackageCheck, RefreshCw, Users } from "lucide-react";
 import { NavLink, Outlet } from "react-router-dom";
 
 const adminLinks = [
@@ -8,6 +8,7 @@ const adminLinks = [
   { to: "/admin/book-issues", label: "Book Issues", icon: BookOpen },
   { to: "/admin/deliveries", label: "Deliveries", icon: PackageCheck },
   { to: "/admin/world", label: "World", icon: Globe2 },
+  { to: "/admin/inspirations", label: "Inspiration", icon: Lightbulb },
   { to: "/admin/memory", label: "Memory", icon: Brain },
   { to: "/admin/failures", label: "Failures", icon: AlertTriangle },
 ];

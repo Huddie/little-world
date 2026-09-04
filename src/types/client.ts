@@ -2,6 +2,7 @@ export type DeliveryMethod = "EMAIL" | "MAIL";
 export type DeliveryAvailability = "ENABLED" | "COMING_SOON" | "DISABLED";
 export type SubscriptionFrequency = "WEEKLY" | "BIWEEKLY" | "MONTHLY";
 export type SubscriptionStatus = "ACTIVE" | "PAUSED" | "CANCELLED";
+export type DeliveryDayOfWeek = 0 | 1 | 2 | 3 | 4 | 5 | 6;
 export type BookIssueStatus =
   | "SCHEDULED"
   | "GENERATING"
@@ -12,6 +13,8 @@ export type BookIssueStatus =
   | "FAILED";
 export type WorkflowStepStatus = "COMPLETE" | "CURRENT" | "PENDING" | "FAILED";
 export type AgeRange = "1-11 months" | "12-23 months" | "2-3" | "4-5" | "6-8" | "9-12";
+export type StoryTypography = "storybook" | "adventure" | "cozy" | "mystery" | "bedtime";
+export type WritingStyle = "rhymed_verse" | "rhythmic_repetition" | "call_and_response" | "gentle_prose";
 
 export interface UserProfile {
   id: string;
@@ -32,6 +35,7 @@ export interface ChildProfile {
   charactersLockedAt: string | null;
   worldBuildStatus: "BUILDING" | "READY";
   parentNotes: string;
+  inspirationSettings?: ChildInspirationSettings;
 }
 
 export interface ChildSummary {
@@ -40,11 +44,13 @@ export interface ChildSummary {
   birthDate: string | null;
   ageRange: AgeRange;
   readingLevel: "Pre-reader" | "Early reader" | "Growing reader" | null;
+  parentNotes: string;
   worldBuildStatus: "BUILDING" | "READY";
   activeSubscriptionId: string | null;
   latestBookIssueId: string | null;
   latestBookStatus: BookIssueStatus | null;
   archivedAt: string | null;
+  inspirationSettings?: ChildInspirationSettings;
 }
 
 export interface SelectedCharacter {
@@ -142,10 +148,78 @@ export interface Subscription {
   childSlots: number;
   usedChildSlots: number;
   deliveryEmail: string | null;
+  deliveryDayOfWeek?: DeliveryDayOfWeek;
   nextIssueAt: string;
   nextPaymentAt: string | null;
   lastIssueAt: string | null;
   deliveryMethods: DeliveryMethod[];
+}
+
+export type InspirationSourceStatus = "ACTIVE" | "PAUSED" | "DISABLED" | "ERROR";
+export type InspirationMappingStatus = "ACTIVE" | "DRAFT" | "DISABLED";
+
+export interface StoryInspirationSource {
+  id: string;
+  key: string;
+  label: string;
+  description: string;
+  type: string;
+  status: InspirationSourceStatus;
+}
+
+export interface StoryInspirationTheme {
+  id: string;
+  key: string;
+  label: string;
+  description: string;
+  enabled: boolean;
+}
+
+export interface ChildInspirationSettings {
+  childId: string;
+  enabledSourceIds: string[];
+  enabledThemeIds: string[];
+  parentNotes: string;
+}
+
+export interface StoryInspirationCatalog {
+  sources: StoryInspirationSource[];
+  themes: StoryInspirationTheme[];
+}
+
+export interface StoryInspirationSelection {
+  id: string;
+  sourceId: string;
+  sourceLabel: string;
+  itemLabel: string;
+  themeLabels: string[];
+  childFacingMode: "HIDDEN" | "THEME" | "EXPLICIT";
+}
+
+export interface AdminInspirationMapping {
+  id: string;
+  sourceId: string;
+  sourceLabel: string;
+  itemLabel: string;
+  themeLabels: string[];
+  ageGuidance: string | null;
+  promptGuidance: string | null;
+  status: InspirationMappingStatus;
+  updatedAt: string;
+}
+
+export interface AdminInspirationProviderStatus {
+  sourceId: string;
+  sourceLabel: string;
+  status: InspirationSourceStatus;
+  lastSyncedAt: string | null;
+  lastError: string | null;
+}
+
+export interface AdminInspirationOverview {
+  catalog: StoryInspirationCatalog;
+  mappings: AdminInspirationMapping[];
+  providerStatuses: AdminInspirationProviderStatus[];
 }
 
 export interface WorkflowStep {
@@ -169,6 +243,8 @@ export interface BookIssue {
   episodeNumber: number;
   title: string;
   subtitle: string | null;
+  typography: StoryTypography;
+  writingStyle: WritingStyle;
   status: BookIssueStatus;
   scheduledFor: string;
   readyAt: string | null;
@@ -178,6 +254,7 @@ export interface BookIssue {
   summary: string;
   pages: BookPage[];
   workflow: WorkflowStep[];
+  inspirations?: StoryInspirationSelection[];
 }
 
 export interface DeliveryAttempt {
@@ -264,6 +341,7 @@ export interface AdminSubscriptionRow {
   usedChildSlots: number;
   deliveryMethods: DeliveryMethod[];
   deliveryEmail: string | null;
+  deliveryDayOfWeek?: DeliveryDayOfWeek;
   nextIssueAt: string;
   lastIssueAt: string | null;
   createdAt: string;
@@ -334,6 +412,8 @@ export interface DashboardData {
 export interface WorldRelationship {
   id: string;
   status: "PENDING" | "ACTIVE" | "REJECTED" | "REMOVED";
+  childAId: string;
+  childBId: string | null;
   direction: "INCOMING" | "OUTGOING";
   canAccept: boolean;
   createdAt: string;

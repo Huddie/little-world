@@ -1,5 +1,5 @@
 import { httpApiClient } from "./http-api-client";
-import type { AdminAccess, AdminBookIssue, AdminChildRow, AdminDelivery, AdminFailures, AdminMemory, AdminSubscriptionRow, AdminUserRow, AdminWorldCatalog, AgeRange, BookIssue, ChildSummary, DashboardData, Product, SelectedCharacter, UserProfile } from "../types/client";
+import type { AdminAccess, AdminBookIssue, AdminChildRow, AdminDelivery, AdminFailures, AdminInspirationOverview, AdminMemory, AdminSubscriptionRow, AdminUserRow, AdminWorldCatalog, AgeRange, BookIssue, ChildInspirationSettings, ChildSummary, DashboardData, DeliveryDayOfWeek, Product, SelectedCharacter, StoryInspirationCatalog, UserProfile } from "../types/client";
 
 export interface ApiClient {
   getDashboard(childId?: string): Promise<DashboardData>;
@@ -15,6 +15,7 @@ export interface ApiClient {
   getAdminFailures(): Promise<AdminFailures>;
   getAdminMemory(): Promise<AdminMemory>;
   getAdminWorldCatalog(): Promise<AdminWorldCatalog>;
+  getAdminInspirationOverview(): Promise<AdminInspirationOverview>;
   backfillAdminMemory(): Promise<{ queued: number }>;
   getAdminUsers(): Promise<AdminUserRow[]>;
   getAdminChildren(): Promise<AdminChildRow[]>;
@@ -30,6 +31,7 @@ export interface ApiClient {
   createSubscription(input: CreateSubscriptionRequest): Promise<{ subscription: { id: string }; firstIssue: { id: string } }>;
   updateSubscriptionStatus(id: string, status: "ACTIVE" | "PAUSED" | "CANCELLED"): Promise<{ ok: true }>;
   updateSubscriptionFrequency(id: string, frequency: "WEEKLY" | "BIWEEKLY" | "MONTHLY"): Promise<{ ok: true }>;
+  updateSubscriptionSchedule(id: string, input: UpdateSubscriptionScheduleRequest): Promise<{ ok: true }>;
   updateSubscriptionDeliveryEmail(id: string, deliveryEmail: string | null): Promise<{ ok: true }>;
   updateSubscriptionDeliveryMethods(id: string, deliveryMethods: Array<"EMAIL" | "MAIL">): Promise<{ ok: true }>;
   deleteSubscription(id: string): Promise<{ ok: true }>;
@@ -38,7 +40,10 @@ export interface ApiClient {
   retryBookIssue(id: string): Promise<{ ok: true }>;
   retryBookIssueStep(issueId: string, stepId: string): Promise<{ ok: true }>;
   inviteRelationship(input: { childId: string; inviteeParentEmail: string }): Promise<DashboardData["relationships"]>;
-  updateRelationshipStatus(id: string, status: "ACTIVE" | "REJECTED" | "REMOVED"): Promise<DashboardData["relationships"]>;
+  updateRelationshipStatus(id: string, status: "ACTIVE" | "REJECTED" | "REMOVED", childId?: string): Promise<DashboardData["relationships"]>;
+  getInspirationCatalog(): Promise<StoryInspirationCatalog>;
+  getChildInspirationSettings(childId: string): Promise<ChildInspirationSettings>;
+  updateChildInspirationSettings(childId: string, input: UpdateChildInspirationSettingsRequest): Promise<ChildInspirationSettings>;
   saveStoryInspiration(notes: string): Promise<{ notes: string }>;
 }
 
@@ -79,12 +84,23 @@ export interface CreateSubscriptionRequest {
   deliveryMethods: Array<"EMAIL" | "MAIL">;
 }
 
+export interface UpdateSubscriptionScheduleRequest {
+  frequency?: "WEEKLY" | "BIWEEKLY" | "MONTHLY";
+  deliveryDayOfWeek?: DeliveryDayOfWeek;
+}
+
 export interface UpdateChildRequest {
   firstName?: string | null;
   birthDate?: string | null;
   ageRange: AgeRange;
   readingLevel?: string | null;
   optionalParentNotes?: string | null;
+}
+
+export interface UpdateChildInspirationSettingsRequest {
+  enabledSourceIds: string[];
+  enabledThemeIds: string[];
+  parentNotes?: string | null;
 }
 
 export const apiClient: ApiClient = httpApiClient;

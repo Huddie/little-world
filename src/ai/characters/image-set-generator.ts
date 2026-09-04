@@ -52,7 +52,8 @@ export async function generateCharacterImageSets(input: GenerateCharacterImageSe
 function characterReferenceStyleGuide(character: GeneratedCastMember): string {
   return [
     "Polished modern children's picture book character reference art.",
-    "Clean readable silhouette, warm expressive face, soft natural colors, simple background.",
+    "Clean readable silhouette, warm expressive face, light airy pastel colors, simple bright cream or pale sky background.",
+    "Use cheerful studio-style lighting. Avoid dark, muddy, gloomy, nighttime, heavy-shadow, or high-contrast dramatic color grading.",
     "The image must contain exactly one character and no other people, animals, companions, crowds, text, logos, props that imply another character, or story scene action.",
     `Character: ${character.displayName}, ${character.species}.`,
     `Description: ${character.description}`,

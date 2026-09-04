@@ -12,6 +12,7 @@ export class BrowserPdfRenderer implements PdfRenderer {
     try {
       const page = await browser.newPage();
       await page.setContent(html);
+      await page.evaluate("document.fonts && document.fonts.ready");
       const pdf = await page.pdf({ format: "letter", printBackground: true });
       return new Uint8Array(pdf);
     } finally {

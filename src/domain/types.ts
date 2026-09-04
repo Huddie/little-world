@@ -7,8 +7,20 @@ export type DeliveryAvailability = (typeof deliveryAvailability)[number];
 export const subscriptionFrequencies = ["WEEKLY", "BIWEEKLY", "MONTHLY"] as const;
 export type SubscriptionFrequency = (typeof subscriptionFrequencies)[number];
 
+export const weekdays = [0, 1, 2, 3, 4, 5, 6] as const;
+export type Weekday = (typeof weekdays)[number];
+
 export const subscriptionStatuses = ["ACTIVE", "PAUSED", "CANCELLED"] as const;
 export type SubscriptionStatus = (typeof subscriptionStatuses)[number];
+
+export const inspirationSourceKinds = ["CURATED", "SEFARIA_CALENDAR", "CUSTOM"] as const;
+export type InspirationSourceKind = (typeof inspirationSourceKinds)[number];
+
+export const inspirationItemTypes = ["THEME", "CALENDAR_READING", "HOLIDAY", "CUSTOM_NOTE"] as const;
+export type InspirationItemType = (typeof inspirationItemTypes)[number];
+
+export const inspirationModes = ["OFF", "THEME", "EXPLICIT"] as const;
+export type InspirationMode = (typeof inspirationModes)[number];
 
 export const bookIssueStatuses = [
   "SCHEDULED",

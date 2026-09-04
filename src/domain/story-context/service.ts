@@ -8,6 +8,7 @@ import { bookIssues, characters, locations, storyExamples, universes, worldRules
 import { listEpisodeSummaries } from "../books/service";
 import { relevantCanon } from "../canon/service";
 import { parseJson, stringArraySchema } from "../json";
+import { resolveInspirationsForIssue } from "../inspirations/service";
 import {
   buildMemoryRetrievalQuery,
   OpenAiEmbeddingClient,
@@ -66,6 +67,7 @@ export async function loadStoryContext(db: Db, bookIssueId: string, env?: Pick<E
     sourceCharacterIds: storyCharacters.map((character) => character.sourceCharacterId).filter((id): id is string => Boolean(id)),
     semanticMatches,
   });
+  const inspirations = await resolveInspirationsForIssue(db, bookIssueId);
 
   return {
     child,
@@ -102,6 +104,7 @@ export async function loadStoryContext(db: Db, bookIssueId: string, env?: Pick<E
     })),
     canon,
     memory,
+    inspirations,
     connectedWorlds: {
       probability: connectedChildIds.length > 0 ? 0.18 : 0,
       childIds: connectedChildIds

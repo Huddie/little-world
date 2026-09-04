@@ -1,18 +1,18 @@
 import { Archive, Baby, Edit3, Plus, Sparkles, X } from "lucide-react";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { Button } from "../components/ui/Button";
 import { Card } from "../components/ui/Card";
 import { EmptyState } from "../components/ui/EmptyState";
 import { ErrorState } from "../components/ui/ErrorState";
-import { Field, Select, TextInput } from "../components/ui/Form";
+import { Field, Select, Textarea, TextInput } from "../components/ui/Form";
 import { LoadingState } from "../components/ui/LoadingState";
 import { StatusBadge } from "../components/ui/StatusBadge";
 import { ageRangeFromBirthDate } from "../lib/age-range";
 import { apiClient } from "../lib/api-client";
 import { formatDate } from "../lib/format";
 import { useAsyncResource } from "../lib/use-async-resource";
-import type { ChildSummary } from "../types/client";
+import type { ChildInspirationSettings, ChildSummary, StoryInspirationCatalog } from "../types/client";
 
 export function ChildrenPage() {
   const children = useAsyncResource(() => apiClient.getChildren(), []);
@@ -114,13 +114,30 @@ function EditChildModal({ child, label, onChanged, onClose }: { child: ChildSumm
   const [birthDate, setBirthDate] = useState(child.birthDate ?? "");
   const [ageRange, setAgeRange] = useState(child.ageRange);
   const [readingLevel, setReadingLevel] = useState(child.readingLevel ?? "");
+  const [parentNotes, setParentNotes] = useState(child.parentNotes);
+  const [enabledSourceIds, setEnabledSourceIds] = useState<string[]>(child.inspirationSettings?.enabledSourceIds ?? []);
+  const [enabledThemeIds, setEnabledThemeIds] = useState<string[]>(child.inspirationSettings?.enabledThemeIds ?? []);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<Error | null>(null);
+  const inspirationResource = useAsyncResource(async () => {
+    const [catalog, settings] = await Promise.all([
+      apiClient.getInspirationCatalog(),
+      apiClient.getChildInspirationSettings(child.id),
+    ]);
+    return { catalog, settings };
+  }, [child.id]);
+
+  useEffect(() => {
+    if (inspirationResource.status !== "success") return;
+    setEnabledSourceIds(inspirationResource.data.settings.enabledSourceIds);
+    setEnabledThemeIds(inspirationResource.data.settings.enabledThemeIds);
+    setParentNotes(inspirationResource.data.settings.parentNotes);
+  }, [inspirationResource.status, inspirationResource.data]);
 
   return (
     <div aria-modal="true" className="fixed inset-0 z-50 grid place-items-center bg-moss-900/40 p-4" onMouseDown={onClose} role="dialog">
-      <div className="w-full max-w-lg rounded-2xl bg-white p-5 shadow-2xl dark:bg-slate-950" onMouseDown={(event) => event.stopPropagation()}>
-        <div className="flex items-start justify-between gap-4">
+      <div className="flex max-h-[calc(100vh-2rem)] w-full max-w-lg flex-col overflow-hidden rounded-2xl bg-white shadow-2xl dark:bg-slate-950" onMouseDown={(event) => event.stopPropagation()}>
+        <div className="flex items-start justify-between gap-4 border-b border-moon-100 p-5 dark:border-white/10">
           <div>
             <h2 className="text-xl font-black text-moss-900 dark:text-white">Edit {label}</h2>
             <p className="mt-1 text-sm text-moss-700 dark:text-slate-300">Update the profile details used for future stories.</p>
@@ -130,7 +147,8 @@ function EditChildModal({ child, label, onChanged, onClose }: { child: ChildSumm
           </button>
         </div>
 
-        <div className="mt-5 grid gap-4">
+        <div className="min-h-0 flex-1 overflow-y-auto p-5">
+        <div className="grid gap-4">
           <Field hint="Optional. If left blank, we’ll use Kid N in account screens." label="Child name">
             <TextInput onChange={(event) => setFirstName(event.target.value)} placeholder="Optional" value={firstName} />
           </Field>
@@ -163,22 +181,44 @@ function EditChildModal({ child, label, onChanged, onClose }: { child: ChildSumm
               <option value="Growing reader">Growing reader</option>
             </Select>
           </Field>
+          <StoryInspirationEditor
+            catalog={inspirationResource.status === "success" ? inspirationResource.data.catalog : null}
+            enabledSourceIds={enabledSourceIds}
+            enabledThemeIds={enabledThemeIds}
+            error={inspirationResource.status === "error" ? inspirationResource.error : null}
+            loading={inspirationResource.status === "loading"}
+            onSourcesChange={setEnabledSourceIds}
+            onThemesChange={setEnabledThemeIds}
+            parentNotes={parentNotes}
+            onParentNotesChange={setParentNotes}
+          />
         </div>
 
         {error ? <p className="mt-4 text-sm font-semibold text-petal-500">{error.message}</p> : null}
-        <div className="mt-5 flex justify-end gap-2">
+        </div>
+        <div className="flex justify-end gap-2 border-t border-moon-100 p-5 dark:border-white/10">
           <Button onClick={onClose} type="button" variant="ghost">Cancel</Button>
           <Button
             disabled={busy}
             onClick={() => {
               setBusy(true);
               setError(null);
-              void apiClient.updateChild(child.id, {
-                firstName,
-                birthDate: birthDate || null,
-                ageRange,
-                readingLevel: readingLevel || null,
-              })
+              void Promise.all([
+                apiClient.updateChild(child.id, {
+                  firstName,
+                  birthDate: birthDate || null,
+                  ageRange,
+                  readingLevel: readingLevel || null,
+                  optionalParentNotes: parentNotes.trim() || null,
+                }),
+                inspirationResource.status === "success"
+                  ? apiClient.updateChildInspirationSettings(child.id, {
+                    enabledSourceIds,
+                    enabledThemeIds,
+                    parentNotes: parentNotes.trim() || null,
+                  })
+                  : Promise.resolve(),
+              ])
                 .then(onChanged)
                 .catch((caught: unknown) => setError(caught instanceof Error ? caught : new Error("Could not update child profile")))
                 .finally(() => setBusy(false));
@@ -188,6 +228,109 @@ function EditChildModal({ child, label, onChanged, onClose }: { child: ChildSumm
           </Button>
         </div>
       </div>
+    </div>
+  );
+}
+
+function StoryInspirationEditor({
+  catalog,
+  enabledSourceIds,
+  enabledThemeIds,
+  error,
+  loading,
+  onParentNotesChange,
+  onSourcesChange,
+  onThemesChange,
+  parentNotes,
+}: {
+  catalog: StoryInspirationCatalog | null;
+  enabledSourceIds: string[];
+  enabledThemeIds: string[];
+  error: Error | null;
+  loading: boolean;
+  onParentNotesChange: (value: string) => void;
+  onSourcesChange: (value: string[]) => void;
+  onThemesChange: (value: string[]) => void;
+  parentNotes: string;
+}) {
+  return (
+    <div className="rounded-xl border border-moon-200 p-4 dark:border-white/10">
+      <h3 className="text-sm font-black text-moss-900 dark:text-white">Story inspiration</h3>
+      <p className="mt-1 text-sm leading-6 text-moss-700 dark:text-slate-300">
+        Choose reusable inspiration sources and themes for future stories.
+      </p>
+
+      {loading ? <p className="mt-3 text-sm font-semibold text-moss-700 dark:text-slate-300">Loading inspiration settings…</p> : null}
+      {error ? <p className="mt-3 text-sm font-semibold text-petal-500">{error.message}</p> : null}
+
+      {catalog ? (
+        <div className="mt-4 grid gap-4">
+          <Field hint="Sources can be calendars, curated collections, family milestones, or other future providers." label="Enabled sources">
+            <ChipGroup
+              items={catalog.sources.map((source) => ({
+                id: source.id,
+                label: source.label,
+                disabled: source.status !== "ACTIVE",
+              }))}
+              selectedIds={enabledSourceIds}
+              onChange={onSourcesChange}
+            />
+          </Field>
+          <Field hint="Themes guide the tone and message without making stories feel canned." label="Allowed themes">
+            <ChipGroup
+              items={catalog.themes.filter((theme) => theme.enabled).map((theme) => ({ id: theme.id, label: theme.label }))}
+              selectedIds={enabledThemeIds}
+              onChange={onThemesChange}
+            />
+          </Field>
+        </div>
+      ) : null}
+
+      <div className="mt-4">
+      <Field hint="Optional guidance for future episodes." label="Notes">
+        <Textarea
+          className="min-h-24"
+          onChange={(event) => onParentNotesChange(event.target.value)}
+          placeholder="Favorite themes, gentle reminders, new interests, or things to avoid."
+          value={parentNotes}
+        />
+      </Field>
+      </div>
+    </div>
+  );
+}
+
+function ChipGroup({
+  items,
+  onChange,
+  selectedIds,
+}: {
+  items: Array<{ id: string; label: string; disabled?: boolean }>;
+  onChange: (ids: string[]) => void;
+  selectedIds: string[];
+}) {
+  if (items.length === 0) return <p className="text-sm text-moss-700 dark:text-slate-300">No options configured yet.</p>;
+
+  return (
+    <div className="flex flex-wrap gap-2">
+      {items.map((item) => {
+        const selected = selectedIds.includes(item.id);
+        return (
+          <button
+            className={`rounded-full border px-3 py-1.5 text-sm font-semibold transition disabled:cursor-not-allowed disabled:opacity-50 ${
+              selected
+                ? "border-moss-700 bg-moss-700 text-white dark:border-moss-300 dark:bg-moss-300 dark:text-slate-950"
+                : "border-moon-200 bg-white text-moss-800 hover:border-moon-400 dark:border-white/15 dark:bg-white/8 dark:text-slate-100"
+            }`}
+            disabled={item.disabled}
+            key={item.id}
+            onClick={() => onChange(selected ? selectedIds.filter((id) => id !== item.id) : [...selectedIds, item.id])}
+            type="button"
+          >
+            {item.label}
+          </button>
+        );
+      })}
     </div>
   );
 }

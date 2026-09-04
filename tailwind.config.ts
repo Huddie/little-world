@@ -41,7 +41,11 @@ export default {
         },
       },
       fontFamily: {
-        sans: ["Inter", "ui-sans-serif", "system-ui", "sans-serif"],
+        sans: ["Nunito", "ui-sans-serif", "system-ui", "sans-serif"],
+        display: ["Baloo 2", "Nunito", "ui-sans-serif", "system-ui", "sans-serif"],
+        story: ["Baloo 2", "Nunito", "ui-sans-serif", "system-ui", "sans-serif"],
+        whimsy: ["Atma", "Baloo 2", "Nunito", "ui-sans-serif", "system-ui", "sans-serif"],
+        storySerif: ["Merriweather", "Georgia", "serif"],
       },
       boxShadow: {
         soft: "0 18px 44px rgba(18, 63, 89, 0.14)",

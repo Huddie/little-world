@@ -188,11 +188,82 @@ export const childPreferences = sqliteTable("child_preferences", {
   likedThemesJson: text("liked_themes_json").notNull(),
   dislikedThemesJson: text("disliked_themes_json").notNull(),
   storyGenresJson: text("story_genres_json").notNull(),
+  enabledInspirationSourceIdsJson: text("enabled_inspiration_source_ids_json").notNull().default("[]"),
+  enabledThemeIdsJson: text("enabled_theme_ids_json").notNull().default("[]"),
+  inspirationConfigJson: text("inspiration_config_json").notNull().default("{}"),
   optionalParentNotes: text("optional_parent_notes"),
   createdAt: text("created_at").notNull().default(sql`CURRENT_TIMESTAMP`),
   updatedAt: text("updated_at").notNull().default(sql`CURRENT_TIMESTAMP`),
 }, (table) => ({
   childUnique: uniqueIndex("child_preferences_child_unique").on(table.childId),
+}));
+
+export const inspirationSources = sqliteTable("inspiration_sources", {
+  id: text("id").primaryKey(),
+  slug: text("slug").notNull(),
+  label: text("label").notNull(),
+  description: text("description").notNull(),
+  kind: text("kind").notNull(),
+  providerKey: text("provider_key"),
+  defaultMode: text("default_mode").notNull().default("THEME"),
+  required: integer("required", { mode: "boolean" }).notNull().default(false),
+  enabled: integer("enabled", { mode: "boolean" }).notNull().default(true),
+  configJson: text("config_json").notNull().default("{}"),
+  createdAt: text("created_at").notNull().default(sql`CURRENT_TIMESTAMP`),
+  updatedAt: text("updated_at").notNull().default(sql`CURRENT_TIMESTAMP`),
+}, (table) => ({
+  slugUnique: uniqueIndex("inspiration_sources_slug_unique").on(table.slug),
+  kindIdx: index("inspiration_sources_kind_idx").on(table.kind),
+}));
+
+export const storyThemes = sqliteTable("story_themes", {
+  id: text("id").primaryKey(),
+  slug: text("slug").notNull(),
+  label: text("label").notNull(),
+  description: text("description").notNull(),
+  promptGuidance: text("prompt_guidance").notNull(),
+  ageGuidanceJson: text("age_guidance_json").notNull().default("{}"),
+  enabled: integer("enabled", { mode: "boolean" }).notNull().default(true),
+  createdAt: text("created_at").notNull().default(sql`CURRENT_TIMESTAMP`),
+  updatedAt: text("updated_at").notNull().default(sql`CURRENT_TIMESTAMP`),
+}, (table) => ({
+  slugUnique: uniqueIndex("story_themes_slug_unique").on(table.slug),
+}));
+
+export const inspirationItems = sqliteTable("inspiration_items", {
+  id: text("id").primaryKey(),
+  sourceId: text("source_id").notNull().references(() => inspirationSources.id, { onDelete: "cascade" }),
+  externalKey: text("external_key").notNull(),
+  type: text("type").notNull(),
+  title: text("title").notNull(),
+  displayTitle: text("display_title").notNull(),
+  sourceRef: text("source_ref"),
+  sourceUrl: text("source_url"),
+  startsAt: text("starts_at"),
+  endsAt: text("ends_at"),
+  metadataJson: text("metadata_json").notNull().default("{}"),
+  createdAt: text("created_at").notNull().default(sql`CURRENT_TIMESTAMP`),
+  updatedAt: text("updated_at").notNull().default(sql`CURRENT_TIMESTAMP`),
+}, (table) => ({
+  sourceExternalUnique: uniqueIndex("inspiration_items_source_external_unique").on(table.sourceId, table.externalKey),
+  sourceDateIdx: index("inspiration_items_source_date_idx").on(table.sourceId, table.startsAt, table.endsAt),
+}));
+
+export const inspirationMappings = sqliteTable("inspiration_mappings", {
+  id: text("id").primaryKey(),
+  sourceId: text("source_id").references(() => inspirationSources.id, { onDelete: "cascade" }),
+  itemExternalKey: text("item_external_key"),
+  themeId: text("theme_id").notNull().references(() => storyThemes.id, { onDelete: "cascade" }),
+  strength: integer("strength").notNull().default(1),
+  childFacingMode: text("child_facing_mode").notNull().default("THEME"),
+  promptGuidance: text("prompt_guidance").notNull(),
+  safetyNotes: text("safety_notes"),
+  enabled: integer("enabled", { mode: "boolean" }).notNull().default(true),
+  createdAt: text("created_at").notNull().default(sql`CURRENT_TIMESTAMP`),
+  updatedAt: text("updated_at").notNull().default(sql`CURRENT_TIMESTAMP`),
+}, (table) => ({
+  sourceItemIdx: index("inspiration_mappings_source_item_idx").on(table.sourceId, table.itemExternalKey),
+  themeIdx: index("inspiration_mappings_theme_idx").on(table.themeId),
 }));
 
 export const subscriptions = sqliteTable("subscriptions", {
@@ -204,6 +275,8 @@ export const subscriptions = sqliteTable("subscriptions", {
   frequency: text("frequency").notNull(),
   childSlots: integer("child_slots").notNull().default(1),
   deliveryEmail: text("delivery_email"),
+  deliveryDayOfWeek: integer("delivery_day_of_week").notNull().default(5),
+  generationLeadHours: integer("generation_lead_hours").notNull().default(24),
   nextIssueAt: text("next_issue_at").notNull(),
   lastIssueAt: text("last_issue_at"),
   createdAt: text("created_at").notNull().default(sql`CURRENT_TIMESTAMP`),
@@ -259,6 +332,24 @@ export const bookIssues = sqliteTable("book_issues", {
   childIdx: index("book_issues_child_idx").on(table.childId),
   statusIdx: index("book_issues_status_idx").on(table.status),
   generationRunIdx: index("book_issues_generation_run_idx").on(table.generationRunId),
+}));
+
+export const bookInspirations = sqliteTable("book_inspirations", {
+  id: text("id").primaryKey(),
+  bookIssueId: text("book_issue_id").notNull().references(() => bookIssues.id, { onDelete: "cascade" }),
+  sourceId: text("source_id").notNull().references(() => inspirationSources.id, { onDelete: "cascade" }),
+  itemId: text("item_id").references(() => inspirationItems.id, { onDelete: "set null" }),
+  themeId: text("theme_id").references(() => storyThemes.id, { onDelete: "set null" }),
+  title: text("title").notNull(),
+  childFacingMode: text("child_facing_mode").notNull(),
+  promptGuidance: text("prompt_guidance").notNull(),
+  sourceRef: text("source_ref"),
+  sourceUrl: text("source_url"),
+  metadataJson: text("metadata_json").notNull().default("{}"),
+  createdAt: text("created_at").notNull().default(sql`CURRENT_TIMESTAMP`),
+}, (table) => ({
+  issueIdx: index("book_inspirations_issue_idx").on(table.bookIssueId),
+  issueSourceUnique: uniqueIndex("book_inspirations_issue_source_unique").on(table.bookIssueId, table.sourceId),
 }));
 
 export const assets = sqliteTable("assets", {
@@ -397,7 +488,7 @@ export const episodeSummaries = sqliteTable("episode_summaries", {
 export const relationships = sqliteTable("relationships", {
   id: text("id").primaryKey(),
   childAId: text("child_a_id").notNull().references(() => children.id, { onDelete: "cascade" }),
-  childBId: text("child_b_id").notNull().references(() => children.id, { onDelete: "cascade" }),
+  childBId: text("child_b_id").references(() => children.id, { onDelete: "cascade" }),
   inviterUserId: text("inviter_user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
   inviteeUserId: text("invitee_user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
   status: text("status").notNull(),

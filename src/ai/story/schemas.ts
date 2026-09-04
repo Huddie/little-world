@@ -25,6 +25,7 @@ export type StoryOutline = z.infer<typeof storyOutlineSchema>;
 export const storyManuscriptSchema = z.object({
   title: z.string().min(1),
   typography: z.enum(["storybook", "adventure", "cozy", "mystery", "bedtime"]).default("storybook"),
+  writingStyle: z.enum(["rhymed_verse", "rhythmic_repetition", "call_and_response", "gentle_prose"]).default("rhymed_verse"),
   pages: z.array(
     z.object({
       pageNumber: z.number().int().positive(),
@@ -36,6 +37,7 @@ export const storyManuscriptSchema = z.object({
 });
 
 export type StoryManuscript = z.infer<typeof storyManuscriptSchema>;
+export type WritingStyle = StoryManuscript["writingStyle"];
 
 export const illustrationBriefSchema = z.object({
   pageNumber: z.number().int().positive(),
@@ -141,6 +143,21 @@ export type StoryWorldRule = {
   rationale: string | null;
 };
 
+export type StoryInspiration = {
+  id: string;
+  sourceId: string;
+  sourceSlug: string;
+  sourceLabel: string;
+  itemId: string | null;
+  themeId: string | null;
+  title: string;
+  childFacingMode: "OFF" | "THEME" | "EXPLICIT";
+  promptGuidance: string;
+  sourceRef: string | null;
+  sourceUrl: string | null;
+  metadata: Record<string, string | number | boolean | null>;
+};
+
 export type StoryContext = {
   child: { id: string; firstName: string | null; birthDate: string | null; ageRange: string };
   universe: { id: string; name: string; description: string };
@@ -159,6 +176,7 @@ export type StoryContext = {
   storyExamples: Array<{ title: string; ageRange: string; genre: string; summary: string; beats: string[]; styleNotes: string }>;
   canon: Array<{ id: string; eventType: string; summary: string; importance: number }>;
   memory: StoryMemoryContext;
+  inspirations: StoryInspiration[];
   connectedWorlds: {
     probability: number;
     childIds: string[];

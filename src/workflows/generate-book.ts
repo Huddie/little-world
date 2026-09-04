@@ -251,19 +251,26 @@ async function generateStoryIfNeeded(db: Db, issueId: string, context: StoryCont
   }
   const outline = await runGenerationStep({ store: stepStore, bookIssueId: issueId, step: "GENERATE_OUTLINE", run: async () => storyGenerator.generateOutline(context) });
   const initialManuscript = await runGenerationStep({ store: stepStore, bookIssueId: issueId, step: "GENERATE_MANUSCRIPT", run: async () => storyGenerator.generateManuscript(context, outline) });
+  const polishedManuscript = await runGenerationStep({
+    store: stepStore,
+    bookIssueId: issueId,
+    step: "CRAFT_REVISE_MANUSCRIPT",
+    inputHash: stableInputHash(initialManuscript),
+    run: async () => storyGenerator.polishManuscript(context, outline, initialManuscript),
+  });
   const initialQa = await runGenerationStep({
     store: stepStore,
     bookIssueId: issueId,
     step: "STORY_QA",
     run: async () => {
-      const qa = await storyGenerator.reviewStory(context, outline, initialManuscript);
+      const qa = await storyGenerator.reviewStory(context, outline, polishedManuscript);
       await db.insert(qaResults).values({ id: newId("qa"), bookIssueId: issueId, kind: "STORY", passed: qa.passed, resultJson: JSON.stringify(qa) }).onConflictDoNothing();
       return qa;
     },
   });
   const manuscript = initialQa.passed
-    ? initialManuscript
-    : await repairManuscript(db, issueId, context, storyGenerator, stepStore, outline, initialManuscript, initialQa);
+    ? polishedManuscript
+    : await repairManuscript(db, issueId, context, storyGenerator, stepStore, outline, polishedManuscript, initialQa);
   const bookId = await runGenerationStep({
     store: stepStore,
     bookIssueId: issueId,
@@ -276,7 +283,7 @@ async function generateStoryIfNeeded(db: Db, issueId: string, context: StoryCont
         title: manuscript.title,
         storyJson: JSON.stringify(manuscript),
         outlineJson: JSON.stringify(outline),
-        generationMetadataJson: JSON.stringify({ provider: "openai" })
+        generationMetadataJson: JSON.stringify({ provider: "openai", inspirations: context.inspirations })
       }).onConflictDoNothing();
       const pageInputs = [
         { id: newId("page"), bookId: id, pageNumber: 1, pageType: "COVER" as const, text: manuscript.title, illustrationPrompt: coverPrompt(context, manuscript.title), metadataJson: "{}" },
@@ -520,6 +527,7 @@ function illustrationPromptForPage(page: typeof bookPages.$inferSelect, context:
     .join("\n");
   return [
     "Illustrate exactly this Little World scene.",
+    lightPaletteRules(context),
     `Allowed visible cast:\n${allowedCast}`,
     hardCharacterRules(pageCharacters),
     "Do not add unlisted animal characters. Background creatures may only be tiny non-character insects or birds if the scene needs them.",
@@ -536,6 +544,19 @@ function pageCharactersForIllustration(page: typeof bookPages.$inferSelect, cont
 
 function hardCharacterRules(charactersForPage: StoryContext["characters"]) {
   return `Hard character identity rules:\n${charactersForPage.map((character) => `- ${character.name} must remain ${character.baseName}. ${speciesGuardrail(`${character.baseName} ${character.description}`)}`).join("\n")}`;
+}
+
+function lightPaletteRules(context: StoryContext) {
+  const bedtime = context.child.ageRange === "1-11 months";
+  return [
+    "Visual palette rules:",
+    "Use a bright, airy children's picture-book palette: warm cream, soft sky blue, honey yellow, fresh moss green, peach, lavender, and gentle pastel accents.",
+    "Prefer cheerful daylight, golden morning, or soft afternoon lighting. Keep faces, clothing, and important objects clearly lit.",
+    "Avoid dark, muddy, horror, gloomy, high-contrast noir, heavy shadow, black-background, or scary nighttime color grading.",
+    bedtime
+      ? "For bedtime scenes, use luminous cozy twilight with pastel moonlight and warm lantern glow; the page should still feel light and comforting."
+      : "If the story mentions moon, mystery, forest, cave, or night, interpret it as whimsical and well-lit rather than dark.",
+  ].join("\n");
 }
 
 function speciesGuardrail(value: string) {
@@ -698,6 +719,7 @@ async function deliverPendingEmail(
 function coverPrompt(context: StoryContext, title: string): string {
   return [
     `Cover illustration for the story "${title}".`,
+    lightPaletteRules(context),
     `Feature only the locked cast: ${context.characters.map((character) => character.name).join(", ")}.`,
     "Use the supplied character reference images as identity anchors.",
     "No words, no letters, no signage, no title text, no captions, and no typography anywhere in the image.",
@@ -706,7 +728,7 @@ function coverPrompt(context: StoryContext, title: string): string {
 }
 
 function characterStyleGuide(context: StoryContext): string {
-  return `Polished modern children's picture book art. Warm, simple, expressive, safe for ages ${context.child.ageRange}. Never render text, letters, numbers, captions, logos, watermarks, or title typography inside illustrations. ${hardCharacterRules(context.characters)} Character canon: ${context.characters
+  return `Polished modern children's picture book art. Warm, simple, expressive, safe for ages ${context.child.ageRange}. Bright airy pastel palette by default; cheerful daylight or luminous cozy twilight; avoid dark/muddy/gloomy color grading. Never render text, letters, numbers, captions, logos, watermarks, or title typography inside illustrations. ${hardCharacterRules(context.characters)} Character canon: ${context.characters
     .map((character) => `${character.name} (${character.baseName}, ${character.role.toLowerCase()}): ${character.visualDescriptionJson}. Hidden style references: ${character.hiddenStyleReferencesJson}`)
     .join(" ")}`;
 }

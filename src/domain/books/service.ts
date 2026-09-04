@@ -9,21 +9,24 @@ export async function listBooksForUser(db: Db, userId: string) {
     .select({
       issue: bookIssues,
       book: books,
-      subscription: subscriptions
+      subscription: subscriptions,
+      episodeSummary: episodeSummaries
     })
     .from(bookIssues)
     .innerJoin(subscriptions, eq(subscriptions.id, bookIssues.subscriptionId))
     .leftJoin(books, eq(books.bookIssueId, bookIssues.id))
+    .leftJoin(episodeSummaries, eq(episodeSummaries.bookIssueId, bookIssues.id))
     .where(eq(subscriptions.userId, userId))
     .orderBy(desc(bookIssues.episodeNumber));
 }
 
 export async function getBookDetailForUser(db: Db, userId: string, bookIssueId: string) {
   const record = await db
-    .select({ issue: bookIssues, book: books, subscription: subscriptions })
+    .select({ issue: bookIssues, book: books, subscription: subscriptions, episodeSummary: episodeSummaries })
     .from(bookIssues)
     .innerJoin(subscriptions, eq(subscriptions.id, bookIssues.subscriptionId))
     .leftJoin(books, eq(books.bookIssueId, bookIssues.id))
+    .leftJoin(episodeSummaries, eq(episodeSummaries.bookIssueId, bookIssues.id))
     .where(and(eq(bookIssues.id, bookIssueId), eq(subscriptions.userId, userId)))
     .get();
   if (!record) throw new Response("Book not found", { status: 404 });

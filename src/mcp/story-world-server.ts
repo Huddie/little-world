@@ -18,6 +18,17 @@ class LiveStoryWorldProvider {
     return this.get(`/api/mcp/generation-context/${encodeURIComponent(bookIssueId)}`);
   }
 
+  inspirationCatalog() {
+    return this.get("/api/mcp/inspirations/catalog");
+  }
+
+  inspirationsForDate(input: { date?: string }) {
+    const params = new URLSearchParams();
+    if (input.date) params.set("date", input.date);
+    const query = params.toString();
+    return this.get(`/api/mcp/inspirations/date${query ? `?${query}` : ""}`);
+  }
+
   async lockedCast(bookIssueId: string) {
     const context = await this.generationContext(bookIssueId) as { child?: { id: string }, characters?: unknown[] };
     return {
@@ -93,6 +104,36 @@ server.registerTool(
     inputSchema: { bookIssueId: z.string().min(1) },
   },
   async ({ bookIssueId }) => jsonResult(await provider.generationContext(bookIssueId))
+);
+
+server.registerTool(
+  "get_inspiration_catalog",
+  {
+    title: "Get inspiration catalog",
+    description: "Returns generic Little World inspiration sources, curated themes, and mappings.",
+    inputSchema: {},
+  },
+  async () => jsonResult(await provider.inspirationCatalog())
+);
+
+server.registerTool(
+  "get_inspirations_for_date",
+  {
+    title: "Get inspirations for date",
+    description: "Returns normalized story inspirations for a target delivery date.",
+    inputSchema: { date: z.string().optional() },
+  },
+  async (input) => jsonResult(await provider.inspirationsForDate(input))
+);
+
+server.registerTool(
+  "get_this_week_parsha",
+  {
+    title: "Get this week's parsha",
+    description: "Convenience wrapper for the weekly Torah portion inspiration provider.",
+    inputSchema: { date: z.string().optional() },
+  },
+  async (input) => jsonResult(await provider.inspirationsForDate(input))
 );
 
 async function main() {

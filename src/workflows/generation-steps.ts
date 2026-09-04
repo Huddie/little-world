@@ -7,6 +7,7 @@ export type GenerationStepName =
   | "LOAD_CONTEXT"
   | "GENERATE_OUTLINE"
   | "GENERATE_MANUSCRIPT"
+  | "CRAFT_REVISE_MANUSCRIPT"
   | "REVISE_MANUSCRIPT"
   | "GENERATE_ILLUSTRATION_BRIEFS"
   | "SAVE_BOOK"
@@ -69,6 +70,7 @@ export const generationStepLabels: Record<GenerationStepName, string> = {
   LOAD_CONTEXT: "Load story context",
   GENERATE_OUTLINE: "Generate outline",
   GENERATE_MANUSCRIPT: "Generate manuscript",
+  CRAFT_REVISE_MANUSCRIPT: "Polish manuscript",
   REVISE_MANUSCRIPT: "Revise manuscript",
   GENERATE_ILLUSTRATION_BRIEFS: "Prepare illustration briefs",
   SAVE_BOOK: "Save book",

@@ -1,4 +1,4 @@
-import { Brain, CheckCircle2, Circle, Clock3, Database, Edit3, Globe2, Image, LoaderCircle, MapPin, RefreshCw, Users, X, XCircle } from "lucide-react";
+import { Brain, CheckCircle2, Circle, Clock3, Database, Edit3, Globe2, Image, Lightbulb, LoaderCircle, MapPin, RefreshCw, Users, X, XCircle } from "lucide-react";
 import type { ReactNode } from "react";
 import { useState } from "react";
 import { Link, useParams } from "react-router-dom";
@@ -14,7 +14,7 @@ import { ageRangeFromBirthDate } from "../lib/age-range";
 import { apiClient } from "../lib/api-client";
 import { formatDate, formatDateTime } from "../lib/format";
 import { useAsyncResource } from "../lib/use-async-resource";
-import type { AdminBookIssue, AdminChildRow, AdminMemory, AdminWorldCatalog, BookPage } from "../types/client";
+import type { AdminBookIssue, AdminChildRow, AdminInspirationOverview, AdminMemory, AdminWorldCatalog, BookPage, StoryInspirationSelection } from "../types/client";
 
 export function AdminPlaceholderPage({ title }: { title: string }) {
   return (
@@ -94,12 +94,12 @@ export function AdminChildrenPage() {
               <td className="px-5 py-4 text-moss-700 dark:text-slate-300">{child.activeSubscriptionId?.slice(-8) ?? "—"}</td>
               <td className="px-5 py-4">
                 <div className="flex flex-wrap gap-2">
-                <Button className="h-8 px-2 text-xs" onClick={() => setEditingChild(child)} variant="secondary">
+                <Button className="h-9 w-24 px-2 text-xs" onClick={() => setEditingChild(child)} variant="secondary">
                   <Edit3 size={14} />
                   Edit
                 </Button>
                 <Button
-                  className="h-8 px-2 text-xs"
+                  className="h-9 w-24 px-2 text-xs"
                   disabled={buildingChildId === child.id}
                   onClick={() => {
                     setBuildingChildId(child.id);
@@ -112,7 +112,7 @@ export function AdminChildrenPage() {
                   variant="secondary"
                 >
                   <RefreshCw size={14} />
-                  {buildingChildId === child.id ? "Starting..." : "Build story now"}
+                  {buildingChildId === child.id ? "Starting" : "Build now"}
                 </Button>
                 </div>
               </td>
@@ -147,6 +147,7 @@ export function AdminSubscriptionsPage() {
           <th className="px-5 py-3">Plan</th>
           <th className="px-5 py-3">Status</th>
           <th className="px-5 py-3">Cadence</th>
+          <th className="px-5 py-3">Delivery day</th>
           <th className="px-5 py-3">Child slots</th>
           <th className="px-5 py-3">Delivery</th>
           <th className="px-5 py-3">Send-to</th>
@@ -161,6 +162,7 @@ export function AdminSubscriptionsPage() {
             <td className="px-5 py-4 text-moss-700 dark:text-slate-300">{subscription.productName}</td>
             <td className="px-5 py-4"><StatusBadge status={subscription.status} /></td>
             <td className="px-5 py-4 text-moss-700 dark:text-slate-300">{subscription.frequency === "BIWEEKLY" ? "Bi-weekly" : subscription.frequency.toLowerCase()}</td>
+            <td className="px-5 py-4 text-moss-700 dark:text-slate-300">{weekdayLabel(subscription.deliveryDayOfWeek)}</td>
             <td className="px-5 py-4">{subscription.usedChildSlots}/{subscription.childSlots}</td>
             <td className="px-5 py-4 text-moss-700 dark:text-slate-300">{subscription.deliveryMethods.join(", ") || "—"}</td>
             <td className="px-5 py-4 text-moss-700 dark:text-slate-300">{subscription.deliveryEmail || subscription.parentEmail}</td>
@@ -170,6 +172,167 @@ export function AdminSubscriptionsPage() {
         ))}
       </tbody>
     </AdminTable>
+  );
+}
+
+export function AdminInspirationPage() {
+  const inspirationResource = useAsyncResource(() => apiClient.getAdminInspirationOverview(), []);
+
+  if (inspirationResource.status === "loading") return <LoadingState label="Loading inspiration system" />;
+  if (inspirationResource.status === "error") {
+    return <ErrorState message={inspirationResource.error.message} onRetry={inspirationResource.reload} title="Could not load inspiration system" />;
+  }
+
+  const overview = inspirationResource.data;
+
+  return (
+    <div className="space-y-6">
+      <Card className="p-5">
+        <div className="flex items-start gap-3">
+          <div className="grid h-11 w-11 shrink-0 place-items-center rounded-lg bg-moon-100 text-moss-700 dark:bg-white/10 dark:text-moon-200">
+            <Lightbulb size={20} />
+          </div>
+          <div>
+            <h1 className="text-2xl font-black">Story inspiration</h1>
+            <p className="mt-1 max-w-3xl text-sm leading-6 text-moss-700 dark:text-slate-300">
+              Generic inspiration sources, provider status, and approved mappings used to guide future stories.
+            </p>
+          </div>
+        </div>
+      </Card>
+
+      <div className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_360px]">
+        <div className="space-y-6">
+          <AdminInspirationSources overview={overview} />
+          <AdminInspirationMappings mappings={overview.mappings} />
+        </div>
+        <div className="space-y-6">
+          <AdminProviderStatus overview={overview} />
+          <AdminThemeCatalog overview={overview} />
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function AdminInspirationSources({ overview }: { overview: AdminInspirationOverview }) {
+  return (
+    <AdminTable title="Sources" subtitle="Provider-backed or curated sources parents can enable for a child.">
+      <thead className={adminTableHeadClassName}>
+        <tr>
+          <th className="px-5 py-3">Source</th>
+          <th className="px-5 py-3">Type</th>
+          <th className="px-5 py-3">Status</th>
+          <th className="px-5 py-3">Description</th>
+        </tr>
+      </thead>
+      <tbody className={adminTableBodyClassName}>
+        {overview.catalog.sources.map((source) => (
+          <tr className={adminTableRowClassName} key={source.id}>
+            <td className="px-5 py-4">
+              <p className="font-bold">{source.label}</p>
+              <p className="mt-1 text-xs text-moss-700 dark:text-slate-300">{source.key}</p>
+            </td>
+            <td className="px-5 py-4 text-moss-700 dark:text-slate-300">{source.type}</td>
+            <td className="px-5 py-4"><StatusBadge status={source.status === "ERROR" ? "FAILED" : source.status === "ACTIVE" ? "READY" : "SCHEDULED"} /></td>
+            <td className="px-5 py-4 text-moss-700 dark:text-slate-300">{source.description}</td>
+          </tr>
+        ))}
+        {overview.catalog.sources.length === 0 ? (
+          <tr><td className="px-5 py-6 text-moss-700 dark:text-slate-300" colSpan={4}>No inspiration sources configured.</td></tr>
+        ) : null}
+      </tbody>
+    </AdminTable>
+  );
+}
+
+function AdminInspirationMappings({ mappings }: { mappings: AdminInspirationOverview["mappings"] }) {
+  return (
+    <AdminTable title="Mappings" subtitle="Approved source items mapped to story-safe themes and prompt guidance.">
+      <thead className={adminTableHeadClassName}>
+        <tr>
+          <th className="px-5 py-3">Item</th>
+          <th className="px-5 py-3">Themes</th>
+          <th className="px-5 py-3">Status</th>
+          <th className="px-5 py-3">Age guidance</th>
+          <th className="px-5 py-3">Updated</th>
+        </tr>
+      </thead>
+      <tbody className={adminTableBodyClassName}>
+        {mappings.map((mapping) => (
+          <tr className={adminTableRowClassName} key={mapping.id}>
+            <td className="px-5 py-4">
+              <p className="font-bold">{mapping.itemLabel}</p>
+              <p className="mt-1 text-xs text-moss-700 dark:text-slate-300">{mapping.sourceLabel}</p>
+            </td>
+            <td className="px-5 py-4"><InlineChips labels={mapping.themeLabels} /></td>
+            <td className="px-5 py-4">{mapping.status}</td>
+            <td className="px-5 py-4 text-moss-700 dark:text-slate-300">{mapping.ageGuidance ?? "—"}</td>
+            <td className="px-5 py-4 text-moss-700 dark:text-slate-300">{formatDate(mapping.updatedAt)}</td>
+          </tr>
+        ))}
+        {mappings.length === 0 ? (
+          <tr><td className="px-5 py-6 text-moss-700 dark:text-slate-300" colSpan={5}>No inspiration mappings configured.</td></tr>
+        ) : null}
+      </tbody>
+    </AdminTable>
+  );
+}
+
+function AdminProviderStatus({ overview }: { overview: AdminInspirationOverview }) {
+  return (
+    <Card className="p-5">
+      <h2 className="text-lg font-bold">Provider status</h2>
+      <div className="mt-4 space-y-3">
+        {overview.providerStatuses.map((provider) => (
+          <div className="rounded-lg border border-moon-200 p-3 dark:border-white/10" key={provider.sourceId}>
+            <div className="flex items-center justify-between gap-3">
+              <p className="font-bold">{provider.sourceLabel}</p>
+              <StatusBadge status={provider.status === "ERROR" ? "FAILED" : provider.status === "ACTIVE" ? "READY" : "SCHEDULED"} />
+            </div>
+            <p className="mt-2 text-xs text-moss-700 dark:text-slate-300">Last synced {formatDateTime(provider.lastSyncedAt)}</p>
+            {provider.lastError ? <p className="mt-2 text-sm font-semibold text-petal-500">{provider.lastError}</p> : null}
+          </div>
+        ))}
+        {overview.providerStatuses.length === 0 ? <EmptyState message="Provider health will appear after a backend source is configured." title="No provider status" /> : null}
+      </div>
+    </Card>
+  );
+}
+
+function AdminThemeCatalog({ overview }: { overview: AdminInspirationOverview }) {
+  return (
+    <Card className="p-5">
+      <h2 className="text-lg font-bold">Theme catalog</h2>
+      <div className="mt-4 flex flex-wrap gap-2">
+        {overview.catalog.themes.map((theme) => (
+          <span
+            className={`rounded-full border px-3 py-1.5 text-sm font-semibold ${
+              theme.enabled
+                ? "border-moon-200 bg-moon-50 text-moss-800 dark:border-white/10 dark:bg-white/8 dark:text-slate-100"
+                : "border-moss-100 text-moss-700 opacity-60 dark:border-white/10 dark:text-slate-400"
+            }`}
+            key={theme.id}
+          >
+            {theme.label}
+          </span>
+        ))}
+        {overview.catalog.themes.length === 0 ? <p className="text-sm text-moss-700 dark:text-slate-300">No themes configured.</p> : null}
+      </div>
+    </Card>
+  );
+}
+
+function InlineChips({ labels }: { labels: string[] }) {
+  if (labels.length === 0) return <span className="text-moss-700 dark:text-slate-300">—</span>;
+  return (
+    <div className="flex flex-wrap gap-1.5">
+      {labels.map((label) => (
+        <span className="rounded-full bg-moon-50 px-2 py-1 text-xs font-semibold text-moss-800 dark:bg-white/8 dark:text-slate-200" key={label}>
+          {label}
+        </span>
+      ))}
+    </div>
   );
 }
 
@@ -462,6 +625,7 @@ export function AdminMemoryPage() {
   const [backfilling, setBackfilling] = useState(false);
   const [backfillResult, setBackfillResult] = useState<string | null>(null);
   const [backfillError, setBackfillError] = useState<Error | null>(null);
+  const [selectedEvent, setSelectedEvent] = useState<AdminMemory["events"][number] | null>(null);
   const memoryResource = useAsyncResource(() => apiClient.getAdminMemory(), []);
 
   if (memoryResource.status === "loading") return <LoadingState label="Loading memory" />;
@@ -503,30 +667,39 @@ export function AdminMemoryPage() {
 
       <WorldMemoryOverview memory={memory} />
 
-      <AdminTable title="Memory events" subtitle="Ranked facts available to future story generation.">
+      <AdminTable title="Memory events" subtitle="Ranked continuity facts available to future story generation.">
         <thead className={adminTableHeadClassName}>
           <tr>
             <th className="px-5 py-3">Created</th>
             <th className="px-5 py-3">Type</th>
+            <th className="px-5 py-3">Scope</th>
             <th className="px-5 py-3">Importance</th>
             <th className="px-5 py-3">Embedding</th>
-            <th className="px-5 py-3">Summary</th>
-            <th className="px-5 py-3">Entities</th>
+            <th className="px-5 py-3">Details</th>
           </tr>
         </thead>
         <tbody className={adminTableBodyClassName}>
-          {memory.events.map((event) => (
+          {memory.events.slice(0, 12).map((event) => (
             <tr className={adminTableRowClassName} key={event.id}>
               <td className="px-5 py-4 text-moss-700 dark:text-slate-300">{formatDateTime(event.createdAt)}</td>
               <td className="px-5 py-4 font-semibold">{event.eventType}</td>
+              <td className="px-5 py-4 text-moss-700 dark:text-slate-300">{event.scope}</td>
               <td className="px-5 py-4">{event.importance}</td>
               <td className="px-5 py-4 text-moss-700 dark:text-slate-300">{event.embeddingStatus}</td>
-              <td className="max-w-xl px-5 py-4 text-moss-800 dark:text-slate-200">{event.summary}</td>
-              <td className="px-5 py-4 text-xs text-moss-700 dark:text-slate-300">{event.entities.map((entity) => `${entity.entityType}:${entity.entityId.slice(-8)}`).join(", ") || "-"}</td>
+              <td className="px-5 py-4">
+                <Button className="h-8 px-3 text-xs" onClick={() => setSelectedEvent(event)} variant="secondary">
+                  View
+                </Button>
+              </td>
             </tr>
           ))}
         </tbody>
       </AdminTable>
+      {memory.events.length > 12 ? (
+        <p className="text-sm font-semibold text-moss-700 dark:text-slate-300">
+          Showing 12 of {memory.events.length} memory events. Use details for full context.
+        </p>
+      ) : null}
 
       <div className="grid gap-6 xl:grid-cols-3">
         <MemorySummaryCard count={memory.characterProfiles.length} label="Character profile facts" />
@@ -535,6 +708,47 @@ export function AdminMemoryPage() {
       </div>
 
       <AdminMemoryDetails memory={memory} />
+      {selectedEvent ? <MemoryEventModal event={selectedEvent} onClose={() => setSelectedEvent(null)} /> : null}
+    </div>
+  );
+}
+
+function MemoryEventModal({ event, onClose }: { event: AdminMemory["events"][number]; onClose: () => void }) {
+  return (
+    <div aria-modal="true" className="fixed inset-0 z-50 grid place-items-center bg-moss-900/50 p-4" onMouseDown={onClose} role="dialog">
+      <div className="flex max-h-[calc(100vh-2rem)] w-full max-w-2xl flex-col overflow-hidden rounded-2xl bg-white shadow-2xl dark:bg-slate-950" onMouseDown={(mouseEvent) => mouseEvent.stopPropagation()}>
+        <div className="flex items-start justify-between gap-4 border-b border-moon-100 p-5 dark:border-white/10">
+          <div>
+            <p className="text-xs font-bold uppercase tracking-wide text-moss-700 dark:text-slate-300">{event.scope} · importance {event.importance} · confidence {event.confidence}</p>
+            <h2 className="mt-1 text-xl font-black text-moss-900 dark:text-white">{event.eventType}</h2>
+          </div>
+          <button aria-label="Close memory event" className="grid h-10 w-10 place-items-center rounded-full hover:bg-moon-50 dark:hover:bg-white/8" onClick={onClose} type="button">
+            <X size={18} />
+          </button>
+        </div>
+        <div className="min-h-0 flex-1 space-y-4 overflow-y-auto p-5">
+          <div>
+            <h3 className="text-sm font-black text-moss-900 dark:text-white">Summary</h3>
+            <p className="mt-2 rounded-lg bg-moon-50 p-4 text-sm leading-6 text-moss-800 dark:bg-white/8 dark:text-slate-200">{event.summary}</p>
+          </div>
+          <div className="grid gap-3 text-sm text-moss-700 dark:text-slate-300 sm:grid-cols-2">
+            <p><span className="font-black text-moss-900 dark:text-white">Created:</span> {formatDateTime(event.createdAt)}</p>
+            <p><span className="font-black text-moss-900 dark:text-white">Embedding:</span> {event.embeddingStatus}</p>
+            <p><span className="font-black text-moss-900 dark:text-white">Child:</span> {event.childId?.slice(-8) ?? "Global"}</p>
+            <p><span className="font-black text-moss-900 dark:text-white">Issue:</span> {event.sourceBookIssueId?.slice(-8) ?? "—"}</p>
+          </div>
+          <div>
+            <h3 className="text-sm font-black text-moss-900 dark:text-white">Entities</h3>
+            <div className="mt-2 flex flex-wrap gap-2">
+              {event.entities.length > 0 ? event.entities.map((entity) => (
+                <span className="rounded-full bg-moss-100 px-3 py-1 text-xs font-semibold text-moss-900 dark:bg-white/10 dark:text-slate-100" key={`${entity.entityType}-${entity.entityId}`}>
+                  {entity.entityType}:{entity.entityId.slice(-8)}
+                </span>
+              )) : <span className="text-sm text-moss-700 dark:text-slate-300">No entities attached.</span>}
+            </div>
+          </div>
+        </div>
+      </div>
     </div>
   );
 }
@@ -687,6 +901,7 @@ export function AdminBookIssuesPage() {
               <th className="px-5 py-3">Child</th>
               <th className="px-5 py-3">Parent</th>
               <th className="px-5 py-3">Status</th>
+              <th className="px-5 py-3">Inspiration</th>
               <th className="px-5 py-3">Generation step</th>
               <th className="px-5 py-3">QA</th>
               <th className="px-5 py-3">Scheduled</th>
@@ -704,6 +919,9 @@ export function AdminBookIssuesPage() {
                 <td className="px-5 py-4 text-moss-700 dark:text-slate-300">{issue.parentEmail}</td>
                 <td className="px-5 py-4">
                   <StatusBadge status={issue.status} />
+                </td>
+                <td className="px-5 py-4">
+                  <IssueInspirations inspirations={issue.inspirations} compact />
                 </td>
                 <td className="px-5 py-4">
                   <GenerationStepSummary issue={issue} />
@@ -731,6 +949,37 @@ function GenerationStepSummary({ issue }: { issue: AdminBookIssue }) {
       <p className="mt-1 text-xs text-moss-700 dark:text-slate-300">
         {completed}/{total} steps complete
       </p>
+    </div>
+  );
+}
+
+function IssueInspirations({ compact = false, inspirations }: { compact?: boolean; inspirations?: StoryInspirationSelection[] }) {
+  if (!inspirations || inspirations.length === 0) {
+    return <span className="text-sm text-moss-700 dark:text-slate-300">—</span>;
+  }
+
+  if (compact) {
+    return <InlineChips labels={inspirations.slice(0, 3).map((item) => item.itemLabel)} />;
+  }
+
+  return (
+    <div className="space-y-3">
+      {inspirations.map((item) => (
+        <div className="rounded-lg border border-moon-200 p-3 dark:border-white/10" key={item.id}>
+          <div className="flex items-start justify-between gap-3">
+            <div>
+              <p className="font-bold text-moss-900 dark:text-white">{item.itemLabel}</p>
+              <p className="mt-1 text-xs text-moss-700 dark:text-slate-300">{item.sourceLabel}</p>
+            </div>
+            <span className="rounded-full bg-moon-50 px-2 py-1 text-xs font-bold text-moss-800 dark:bg-white/8 dark:text-slate-200">
+              {item.childFacingMode.toLowerCase()}
+            </span>
+          </div>
+          <div className="mt-3">
+            <InlineChips labels={item.themeLabels} />
+          </div>
+        </div>
+      ))}
     </div>
   );
 }
@@ -863,6 +1112,12 @@ export function AdminBookIssueDetailPage() {
             <GenerationStepChart steps={issue.workflow} />
           </Card>
           <Card className="p-5">
+            <h2 className="text-lg font-bold">Selected inspirations</h2>
+            <div className="mt-4">
+              <IssueInspirations inspirations={issue.inspirations} />
+            </div>
+          </Card>
+          <Card className="p-5">
             <h2 className="text-lg font-bold">Assets</h2>
             <dl className="mt-4 space-y-3 text-sm">
               <div className="flex justify-between gap-3">
@@ -872,6 +1127,14 @@ export function AdminBookIssueDetailPage() {
               <div className="flex justify-between gap-3">
                 <dt className="text-moss-700 dark:text-slate-300">Illustrations</dt>
                 <dd className="font-semibold">{issue.pages.filter((page) => page.illustrationUrl).length}</dd>
+              </div>
+              <div className="flex justify-between gap-3">
+                <dt className="text-moss-700 dark:text-slate-300">Writing</dt>
+                <dd className="font-semibold">{formatWritingStyle(issue.writingStyle)}</dd>
+              </div>
+              <div className="flex justify-between gap-3">
+                <dt className="text-moss-700 dark:text-slate-300">Typography</dt>
+                <dd className="font-semibold capitalize">{issue.typography}</dd>
               </div>
             </dl>
           </Card>
@@ -915,6 +1178,10 @@ function AdminPageImageModal({ onClose, page }: { onClose: () => void; page: Boo
       </div>
     </div>
   );
+}
+
+function formatWritingStyle(style: AdminBookIssue["writingStyle"]) {
+  return style.replaceAll("_", " ");
 }
 
 const stepTone = {
@@ -995,6 +1262,11 @@ function groupWorldRules(rules: AdminWorldCatalog["worldRules"]) {
     groups[key] = [...(groups[key] ?? []), rule];
     return groups;
   }, {});
+}
+
+function weekdayLabel(value?: number) {
+  const days = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
+  return typeof value === "number" ? days[value] ?? "—" : "—";
 }
 
 function WorldJsonPreview({ value }: { value: string }) {

@@ -1,17 +1,19 @@
 import { zValidator } from "@hono/zod-validator";
-import { and, desc, eq, inArray, lte } from "drizzle-orm";
+import { and, desc, eq, inArray } from "drizzle-orm";
 import { Hono } from "hono";
 import { z } from "zod";
 import { CharacterCastGenerator } from "../../ai/characters/cast-generator";
 import { CharacterNameSuggestionService } from "../../ai/characters/name-suggestions";
 import { createBookIssueForSubscription, getBookDetailForUser, listBooksForUser } from "../../domain/books/service";
 import { archiveChild, createChild, createChildInputSchema, listChildrenForUser, updateChild, updateChildInputSchema, updateStoryInspiration } from "../../domain/children/service";
-import { createSubscription, listSubscriptionsForUser, updateSubscriptionDeliveryEmail, updateSubscriptionDeliveryMethods, updateSubscriptionFrequency } from "../../domain/subscriptions/service";
+import { createSubscription, listSubscriptionsForUser, updateSubscriptionDeliveryEmail, updateSubscriptionDeliveryMethods, updateSubscriptionFrequency, updateSubscriptionSchedule } from "../../domain/subscriptions/service";
+import { getChildInspirationSettings, getInspirationsForDate, inspirationSettingsForChild, listBookInspirations, listInspirationCatalog, updateChildInspirationSettings } from "../../domain/inspirations/service";
+import { isGenerationDue } from "../../domain/scheduling/schedule";
 import { getActiveCatalog } from "../../domain/universes/service";
 import { newId } from "../../domain/ids";
 import { parseJson, stringArraySchema } from "../../domain/json";
 import { loadStoryContextFromEnv } from "../../domain/story-context/service";
-import { inviteRelationship, inviteRelationshipInputSchema, listRelationshipsForUser, updateRelationshipStatus } from "../../domain/relationships/service";
+import { inviteRelationship, inviteRelationshipInputSchema, listRelationshipsForUser, updateRelationshipStatus, updateRelationshipStatusInputSchema } from "../../domain/relationships/service";
 import { buildDeliveryInput, deliverBook, EmailDeliveryProvider } from "../../email/delivery";
 import { R2AssetStore } from "../../storage/asset-store";
 import { verifyInternalAssetSignature, verifyPublicAssetDownloadSignature } from "../../storage/internal-asset-signing";
@@ -53,6 +55,8 @@ type Variables = {
   userId: string;
   userEmail: string;
 };
+
+const weekdaySchema = z.union([z.literal(0), z.literal(1), z.literal(2), z.literal(3), z.literal(4), z.literal(5), z.literal(6)]);
 
 export function createApi() {
   const app = new Hono<{ Bindings: Env; Variables: Variables }>();
@@ -119,6 +123,13 @@ export function createApi() {
 
   app.get("/api/mcp/catalog", async (c) => c.json(await getActiveCatalog(createDb(c.env.DB))));
 
+  app.get("/api/mcp/inspirations/catalog", async (c) => c.json(await listInspirationCatalog(createDb(c.env.DB))));
+
+  app.get("/api/mcp/inspirations/date", async (c) => {
+    const date = c.req.query("date") ?? new Date().toISOString();
+    return c.json(await getInspirationsForDate(createDb(c.env.DB), { date }));
+  });
+
   app.get("/api/mcp/generation-context/:id", async (c) => {
     const context = await loadStoryContextFromEnv(c.env, c.req.param("id"));
     return c.json(context);
@@ -134,6 +145,8 @@ export function createApi() {
   });
 
   app.get("/api/catalog", async (c) => c.json(await getActiveCatalog(createDb(c.env.DB))));
+
+  app.get("/api/inspirations/catalog", async (c) => c.json(toClientInspirationCatalog(await listInspirationCatalog(createDb(c.env.DB)))));
 
   app.get("/api/products", async (c) => c.json(await listProducts(createDb(c.env.DB))));
 
@@ -245,6 +258,27 @@ export function createApi() {
     }
   );
 
+  app.get("/api/children/:id/inspiration-settings", async (c) => {
+    return c.json(await getChildInspirationSettings(createDb(c.env.DB), c.get("userId"), c.req.param("id")));
+  });
+
+  app.patch(
+    "/api/children/:id/inspiration-settings",
+    zValidator("json", z.object({
+      enabledSourceIds: z.array(z.string().min(1)),
+      enabledThemeIds: z.array(z.string().min(1)),
+      parentNotes: z.string().max(1000).nullable().optional(),
+    })),
+    async (c) => {
+      const input = c.req.valid("json");
+      return c.json(await updateChildInspirationSettings(createDb(c.env.DB), c.get("userId"), c.req.param("id"), {
+        enabledSourceIds: input.enabledSourceIds,
+        enabledThemeIds: input.enabledThemeIds,
+        ...(input.parentNotes !== undefined ? { parentNotes: input.parentNotes } : {}),
+      }));
+    }
+  );
+
   app.patch(
     "/api/children/current/inspiration",
     zValidator("json", z.object({ optionalParentNotes: z.string().max(1000).nullable() })),
@@ -278,6 +312,21 @@ export function createApi() {
     "/api/subscriptions/:id/frequency",
     zValidator("json", z.object({ frequency: z.enum(["WEEKLY", "BIWEEKLY", "MONTHLY"]) })),
     async (c) => c.json(await updateSubscriptionFrequency(createDb(c.env.DB), c.get("userId"), c.req.param("id"), c.req.valid("json").frequency))
+  );
+
+  app.patch(
+    "/api/subscriptions/:id/schedule",
+    zValidator("json", z.object({
+      frequency: z.enum(["WEEKLY", "BIWEEKLY", "MONTHLY"]).optional(),
+      deliveryDayOfWeek: weekdaySchema.optional()
+    })),
+    async (c) => {
+      const input = c.req.valid("json");
+      return c.json(await updateSubscriptionSchedule(createDb(c.env.DB), c.get("userId"), c.req.param("id"), {
+        ...(input.frequency !== undefined ? { frequency: input.frequency } : {}),
+        ...(input.deliveryDayOfWeek !== undefined ? { deliveryDayOfWeek: input.deliveryDayOfWeek } : {}),
+      }));
+    }
   );
 
   app.patch(
@@ -315,8 +364,8 @@ export function createApi() {
 
   app.post(
     "/api/relationships/:id/status",
-    zValidator("json", z.object({ status: z.enum(["ACTIVE", "REJECTED", "REMOVED"]) })),
-    async (c) => c.json(await updateRelationshipStatus(createDb(c.env.DB), c.get("userId"), c.req.param("id"), c.req.valid("json").status))
+    zValidator("json", updateRelationshipStatusInputSchema),
+    async (c) => c.json(await updateRelationshipStatus(createDb(c.env.DB), c.get("userId"), c.req.param("id"), c.req.valid("json")))
   );
 
   app.post(
@@ -326,22 +375,36 @@ export function createApi() {
       z.object({
         childId: z.string().min(1),
         productId: z.string().min(1),
-        deliveryMethods: z.array(z.enum(["EMAIL", "MAIL"])).min(1)
+        deliveryMethods: z.array(z.enum(["EMAIL", "MAIL"])).min(1),
+        deliveryDayOfWeek: weekdaySchema.optional()
       })
     ),
     async (c) => {
       const db = createDb(c.env.DB);
-      const result = await createSubscription(db, c.get("userId"), c.req.valid("json"));
+      const input = c.req.valid("json");
+      const result = await createSubscription(db, c.get("userId"), {
+        childId: input.childId,
+        productId: input.productId,
+        deliveryMethods: input.deliveryMethods,
+        ...(input.deliveryDayOfWeek !== undefined ? { deliveryDayOfWeek: input.deliveryDayOfWeek } : {}),
+      });
       await startIssueWorkflow(db, c.env, result.firstIssue.id);
       return c.json(result, 201);
     }
   );
 
-  app.get("/api/books", async (c) => c.json((await listBooksForUser(createDb(c.env.DB), c.get("userId"))).map((record) => toClientBookIssue(record.issue, record.book))));
+  app.get("/api/books", async (c) => {
+    const db = createDb(c.env.DB);
+    const records = await listBooksForUser(db, c.get("userId"));
+    return c.json(await Promise.all(records.map(async (record) => (
+      toClientBookIssue(record.issue, record.book, [], [], record.episodeSummary?.summary, await listBookInspirations(db, record.issue.id))
+    ))));
+  });
 
   app.get("/api/books/:id", async (c) => {
-    const detail = await getBookDetailForUser(createDb(c.env.DB), c.get("userId"), c.req.param("id"));
-    return c.json(toClientBookIssue(detail.issue, detail.book, detail.pages));
+    const db = createDb(c.env.DB);
+    const detail = await getBookDetailForUser(db, c.get("userId"), c.req.param("id"));
+    return c.json(toClientBookIssue(detail.issue, detail.book, detail.pages, [], detail.episodeSummary?.summary, await listBookInspirations(db, detail.issue.id)));
   });
 
   app.post("/api/books/:id/resend-email", async (c) => {
@@ -498,6 +561,11 @@ export function createApi() {
     return c.json(await getActiveCatalog(createDb(c.env.DB)));
   });
 
+  app.get("/api/admin/inspirations", async (c) => {
+    const catalog = await listInspirationCatalog(createDb(c.env.DB));
+    return c.json(toAdminInspirationOverview(catalog));
+  });
+
   app.post("/api/admin/memory/backfill", async (c) => {
     const db = createDb(c.env.DB);
     await requirePermission(db, { id: c.get("userId"), email: c.get("userEmail") }, c.env, "admin:retry");
@@ -566,7 +634,8 @@ export function createApi() {
 
 export async function runScheduler(env: Env, now = new Date()) {
   const db = createDb(env.DB);
-  const due = await db.select().from(subscriptions).where(and(eq(subscriptions.status, "ACTIVE"), lte(subscriptions.nextIssueAt, now.toISOString()))).limit(25);
+  const candidates = await db.select().from(subscriptions).where(eq(subscriptions.status, "ACTIVE")).limit(100);
+  const due = candidates.filter((subscription) => isGenerationDue(subscription, now)).slice(0, 25);
   for (const subscription of due) {
     const { createBookIssueForSubscription } = await import("../../domain/books/service");
     const slots = await db.select().from(subscriptionChildSlots).where(and(eq(subscriptionChildSlots.subscriptionId, subscription.id), eq(subscriptionChildSlots.status, "ACTIVE")));
@@ -694,10 +763,10 @@ async function getDashboard(db: Db, userId: string, userEmail: string, childId: 
   const clientBooks = await Promise.all(bookRecords.map(async (record) => {
     if (record.issue.childId !== child.id) return null;
     const pages = record.book ? await db.select().from(bookPages).where(eq(bookPages.bookId, record.book.id)) : [];
-    return toClientBookIssue(record.issue, record.book, pages);
+    return toClientBookIssue(record.issue, record.book, pages, [], record.episodeSummary?.summary, await listBookInspirations(db, record.issue.id));
   }));
   const childBooks = clientBooks.filter((book): book is NonNullable<typeof book> => Boolean(book));
-  const currentIssue = childBooks.find((book) => book.status !== "DELIVERED") ?? childBooks[0];
+  const currentIssue = pickCurrentDashboardIssue(childBooks);
   if (!clientProduct || !currentIssue) return null;
   const methods = await db.select().from(subscriptionDeliveryMethods).where(and(eq(subscriptionDeliveryMethods.subscriptionId, subscription.id), eq(subscriptionDeliveryMethods.enabled, true)));
 
@@ -728,7 +797,8 @@ async function getDashboard(db: Db, userId: string, userEmail: string, childId: 
       }))),
       charactersLockedAt: child.preferences?.charactersLockedAt ?? null,
       worldBuildStatus: isWorldReady(child.preferences?.selectedCharacterCastJson) ? "READY" : "BUILDING",
-      parentNotes: child.preferences?.optionalParentNotes ?? ""
+      parentNotes: child.preferences?.optionalParentNotes ?? "",
+      inspirationSettings: inspirationSettingsForChild(child.id, child.preferences)
     },
     subscription: {
       id: subscription.id,
@@ -738,6 +808,8 @@ async function getDashboard(db: Db, userId: string, userEmail: string, childId: 
       childSlots: subscription.childSlots,
       usedChildSlots: await countUsedChildSlots(db, subscription.id),
       deliveryEmail: subscription.deliveryEmail,
+      deliveryDayOfWeek: subscription.deliveryDayOfWeek,
+      generationLeadHours: subscription.generationLeadHours,
       nextIssueAt: subscription.nextIssueAt,
       nextPaymentAt: subscription.nextIssueAt,
       lastIssueAt: subscription.lastIssueAt,
@@ -817,6 +889,8 @@ async function listChildSummaries(db: Db, userId: string) {
       birthDate: child.birthDate,
       ageRange: child.ageRange,
       readingLevel: normalizeReadingLevel(child.readingLevel),
+      parentNotes: child.preferences?.optionalParentNotes ?? "",
+      inspirationSettings: inspirationSettingsForChild(child.id, child.preferences),
       worldBuildStatus: isWorldReady(child.preferences?.selectedCharacterCastJson) ? "READY" : "BUILDING",
       activeSubscriptionId: activeSubscription?.id ?? null,
       latestBookIssueId: latestIssue?.id ?? null,
@@ -899,6 +973,7 @@ async function listAdminSubscriptions(db: Db) {
     usedChildSlots: slotRows.filter((slot) => slot.subscriptionId === record.subscription.id).length,
     deliveryMethods: methodRows.filter((method) => method.subscriptionId === record.subscription.id).map((method) => method.method),
     deliveryEmail: record.subscription.deliveryEmail,
+    deliveryDayOfWeek: record.subscription.deliveryDayOfWeek,
     nextIssueAt: record.subscription.nextIssueAt,
     lastIssueAt: record.subscription.lastIssueAt,
     createdAt: record.subscription.createdAt,
@@ -955,7 +1030,7 @@ async function listAdminIssues(db: Db) {
     const qa = await db.select().from(qaResults).where(eq(qaResults.bookIssueId, record.issue.id));
     const attempts = await db.select().from(deliveries).where(eq(deliveries.bookIssueId, record.issue.id));
     return {
-      ...toClientBookIssue(record.issue, record.book, pages, workflow),
+      ...toClientBookIssue(record.issue, record.book, pages, workflow, undefined, await listBookInspirations(db, record.issue.id)),
       childLabel: record.child.firstName ?? `Ages ${record.child.ageRange}`,
       parentEmail: record.user.email,
       qaResult: qa.some((result) => !result.passed) ? "FAIL" : record.issue.status === "GENERATING" ? "REVIEW" : "PASS",
@@ -980,7 +1055,9 @@ function toClientBookIssue(
   issue: typeof bookIssues.$inferSelect,
   book?: typeof books.$inferSelect | null,
   pages: Array<typeof bookPages.$inferSelect> = [],
-  workflow: Array<typeof generationSteps.$inferSelect> = []
+  workflow: Array<typeof generationSteps.$inferSelect> = [],
+  episodeSummary?: string | null,
+  inspirations: Awaited<ReturnType<typeof listBookInspirations>> = []
 ) {
   return {
     id: issue.id,
@@ -988,13 +1065,15 @@ function toClientBookIssue(
     episodeNumber: issue.episodeNumber,
     title: book?.title ?? `Episode ${issue.episodeNumber}`,
     subtitle: book?.subtitle ?? null,
+    typography: book ? bookTypography(book.storyJson) : "storybook",
+    writingStyle: book ? bookWritingStyle(book.storyJson) : "rhymed_verse",
     status: issue.status,
     scheduledFor: issue.scheduledFor,
     readyAt: issue.readyAt,
     deliveredAt: issue.deliveredAt,
     coverUrl: assetUrl(pages.find((page) => page.pageType === "COVER")?.illustrationAssetId),
     pdfUrl: book?.pdfAssetId ? `/api/assets/${book.pdfAssetId}/download` : null,
-    summary: book ? summarizeBook(book.storyJson) : "This episode is scheduled.",
+    summary: episodeSummary ?? (book ? summarizeBook(book.storyJson) : "This episode is scheduled."),
     pages: pages.map((page) => ({
       id: page.id,
       pageNumber: page.pageNumber,
@@ -1007,7 +1086,68 @@ function toClientBookIssue(
       label: generationStepLabels[step.step as GenerationStepName] ?? step.step,
       status: normalizeStepStatus(step.status),
       timestamp: step.completedAt ?? step.startedAt
-    }))
+    })),
+    inspirations: inspirations.map(toClientInspirationSelection)
+  };
+}
+
+function toClientInspirationSelection(inspiration: Awaited<ReturnType<typeof listBookInspirations>>[number]) {
+  return {
+    id: inspiration.id,
+    sourceId: inspiration.sourceId,
+    sourceLabel: inspiration.sourceLabel,
+    itemLabel: inspiration.title,
+    themeLabels: [],
+    childFacingMode: inspiration.childFacingMode === "OFF" ? "HIDDEN" : inspiration.childFacingMode,
+  };
+}
+
+function toClientInspirationCatalog(catalog: Awaited<ReturnType<typeof listInspirationCatalog>>) {
+  return {
+    sources: catalog.sources.map((source) => ({
+      id: source.id,
+      key: source.slug,
+      label: source.label,
+      description: source.description,
+      type: source.kind,
+      status: source.enabled ? "ACTIVE" : "DISABLED",
+    })),
+    themes: catalog.themes.map((theme) => ({
+      id: theme.id,
+      key: theme.slug,
+      label: theme.label,
+      description: theme.description,
+      enabled: theme.enabled,
+    })),
+  };
+}
+
+function toAdminInspirationOverview(catalog: Awaited<ReturnType<typeof listInspirationCatalog>>) {
+  const clientCatalog = toClientInspirationCatalog(catalog);
+  const sourcesById = new Map(clientCatalog.sources.map((source) => [source.id, source]));
+  const themesById = new Map(clientCatalog.themes.map((theme) => [theme.id, theme]));
+  return {
+    catalog: clientCatalog,
+    mappings: catalog.mappings.map((mapping) => ({
+      id: mapping.id,
+      sourceId: mapping.sourceId ?? "",
+      sourceLabel: mapping.sourceId ? sourcesById.get(mapping.sourceId)?.label ?? "Source" : "Any source",
+      itemLabel: mapping.itemExternalKey ?? "Default mapping",
+      themeLabels: [themesById.get(mapping.themeId)?.label ?? mapping.themeId],
+      ageGuidance: null,
+      promptGuidance: mapping.promptGuidance,
+      status: mapping.enabled ? "ACTIVE" : "DISABLED",
+      updatedAt: mapping.updatedAt,
+    })),
+    providerStatuses: clientCatalog.sources
+      .filter((source) => source.type !== "CURATED")
+      .map((source) => ({
+        sourceId: source.id,
+        sourceLabel: source.label,
+        status: source.status,
+        lastSyncedAt: null,
+        lastError: null,
+      })),
   };
 }
 
@@ -1067,7 +1207,33 @@ function speciesFromVisualDescription(value: string) {
 
 function summarizeBook(storyJson: string) {
   const parsed = JSON.parse(storyJson) as { pages?: Array<{ text?: string }> };
-  return parsed.pages?.[0]?.text ?? "A new story is ready.";
+  const storyText = parsed.pages?.map((page) => page.text).filter(Boolean).join(" ");
+  if (!storyText) return "A new story is ready.";
+  return storyText.length > 280 ? `${storyText.slice(0, 277).trim()}...` : storyText;
+}
+
+function bookTypography(storyJson: string): "storybook" | "adventure" | "cozy" | "mystery" | "bedtime" {
+  try {
+    const parsed = JSON.parse(storyJson) as { typography?: string };
+    if (parsed.typography === "adventure" || parsed.typography === "cozy" || parsed.typography === "mystery" || parsed.typography === "bedtime") {
+      return parsed.typography;
+    }
+    return "storybook";
+  } catch {
+    return "storybook";
+  }
+}
+
+function bookWritingStyle(storyJson: string): "rhymed_verse" | "rhythmic_repetition" | "call_and_response" | "gentle_prose" {
+  try {
+    const parsed = JSON.parse(storyJson) as { writingStyle?: string };
+    if (parsed.writingStyle === "rhythmic_repetition" || parsed.writingStyle === "call_and_response" || parsed.writingStyle === "gentle_prose") {
+      return parsed.writingStyle;
+    }
+    return "rhymed_verse";
+  } catch {
+    return "rhymed_verse";
+  }
 }
 
 function normalizeReadingLevel(value: string | null) {
@@ -1075,6 +1241,12 @@ function normalizeReadingLevel(value: string | null) {
   if (value === "early") return "Early reader";
   if (value === "growing") return "Growing reader";
   return value;
+}
+
+function pickCurrentDashboardIssue<T extends { episodeNumber: number; status: string }>(issues: T[]): T | undefined {
+  const latestDelivered = issues.find((issue) => issue.status === "DELIVERED");
+  const activeIssue = issues.find((issue) => issue.status !== "DELIVERED" && (!latestDelivered || issue.episodeNumber >= latestDelivered.episodeNumber));
+  return activeIssue ?? latestDelivered ?? issues[0];
 }
 
 function normalizeStepStatus(status: string) {

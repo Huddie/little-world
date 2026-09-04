@@ -40,33 +40,25 @@ export function BookDetailPage() {
         Back to dashboard
       </Link>
 
-      <section className="grid gap-6 lg:grid-cols-[0.85fr_1.15fr]">
-        <Card className="overflow-hidden">
-          <Artwork className="aspect-[4/3] w-full" fit="cover" label="Cover art is being prepared" pendingLabel="Generating cover" src={book.coverUrl} />
-          <div className="space-y-4 p-5">
-            <div className="flex items-center justify-between gap-3">
-              <span className="text-sm font-bold uppercase tracking-wide text-moss-700">Episode {book.episodeNumber}</span>
-              <StatusBadge status={book.status} />
-            </div>
-            <div>
-              <h1 className="text-3xl font-black tracking-normal">{book.title}</h1>
-              {book.subtitle ? <p className="mt-2 text-moss-700">{book.subtitle}</p> : null}
-            </div>
-            <p className="text-sm leading-6 text-moss-700">Scheduled {formatDate(book.scheduledFor)}</p>
-            <div className="flex flex-wrap gap-3">
+      <Card className="overflow-hidden">
+        <section className="grid gap-5 p-4 sm:p-5 md:grid-cols-[220px_minmax(0,1fr)] md:items-start">
+          <div className="space-y-3">
+            <Artwork className="aspect-[4/3] w-full rounded-xl md:aspect-square" fit="cover" label="Cover art is being prepared" pendingLabel="Generating cover" src={book.coverUrl} />
+            <div className="grid gap-2">
               {book.pdfUrl ? (
-                <Button onClick={() => window.location.assign(book.pdfUrl as string)}>
+                <Button className="w-full" onClick={() => window.location.assign(book.pdfUrl as string)}>
                   <Download size={16} />
                   Download PDF
                 </Button>
               ) : (
-                <Button disabled>
+                <Button className="w-full" disabled>
                   <Download size={16} />
                   Download PDF
                 </Button>
               )}
               {book.status === "DELIVERED" ? (
                 <Button
+                  className="w-full"
                   disabled={resending}
                   onClick={() => {
                     setResending(true);
@@ -87,27 +79,33 @@ export function BookDetailPage() {
             {resent ? <p className="text-sm font-semibold text-moss-700 dark:text-slate-300">Email sent.</p> : null}
             {resendError ? <p className="text-sm font-semibold text-petal-500">{resendError.message}</p> : null}
           </div>
-        </Card>
-
-        <div className="space-y-6">
-          <Card className="p-5">
-            <h2 className="text-lg font-bold">Episode summary</h2>
-            <p className="mt-3 text-sm leading-6 text-moss-700">{book.summary}</p>
-          </Card>
-        </div>
-      </section>
+          <div className="min-w-0">
+            <div className="flex flex-wrap items-center gap-3">
+              <span className="text-sm font-bold uppercase tracking-wide text-moss-700 dark:text-slate-300">Episode {book.episodeNumber}</span>
+              <StatusBadge status={book.status} />
+              <span className="text-sm leading-6 text-moss-700 dark:text-slate-300">Scheduled {formatDate(book.scheduledFor)}</span>
+            </div>
+            <h1 className="font-display mt-3 text-3xl font-black leading-tight tracking-normal text-moss-900 dark:text-white sm:text-4xl">{book.title}</h1>
+            {book.subtitle ? <p className="mt-2 text-moss-700 dark:text-slate-300">{book.subtitle}</p> : null}
+            <div className="mt-8 max-w-3xl rounded-xl border border-moon-100 bg-moon-50/60 p-4 dark:border-white/10 dark:bg-white/8">
+              <h2 className="font-display text-lg font-bold text-moss-900 dark:text-white">Episode summary</h2>
+              <p className="mt-2 text-sm leading-6 text-moss-700 dark:text-slate-300">{book.summary}</p>
+            </div>
+          </div>
+        </section>
+      </Card>
 
       {book.pages.length > 0 ? (
         <section>
-          <h2 className="mb-4 text-2xl font-black">Page preview</h2>
-          <PageStripPreview pages={book.pages} />
+          <h2 className="font-display mb-4 text-2xl font-black">Page preview</h2>
+          <PageStripPreview pages={book.pages} typography={book.typography} />
         </section>
       ) : null}
     </div>
   );
 }
 
-function PageStripPreview({ pages }: { pages: BookIssue["pages"] }) {
+function PageStripPreview({ pages, typography }: { pages: BookIssue["pages"]; typography: BookIssue["typography"] }) {
   const [pageIndex, setPageIndex] = useState(0);
   const [direction, setDirection] = useState<"next" | "previous">("next");
   const page = pages[pageIndex];
@@ -121,8 +119,8 @@ function PageStripPreview({ pages }: { pages: BookIssue["pages"] }) {
   }
 
   return (
-    <Card className="overflow-hidden bg-gradient-to-br from-moon-50 via-white to-honey-50 p-4 sm:p-6">
-      <div className="mx-auto flex max-w-5xl items-center justify-center gap-3 sm:gap-5">
+    <Card className="overflow-hidden bg-gradient-to-br from-moon-50 via-white to-honey-50 p-3 dark:from-slate-950 dark:via-slate-950 dark:to-moss-950 sm:p-5">
+      <div className="mx-auto grid max-w-6xl grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-2 sm:gap-4">
         <CarouselButton
           ariaLabel="Previous page"
           disabled={!canFlip}
@@ -130,26 +128,33 @@ function PageStripPreview({ pages }: { pages: BookIssue["pages"] }) {
           onClick={() => showPage(pageIndex - 1, "previous")}
         />
 
-        <div className={`book-page-strip book-page-strip-${direction} grid min-w-0 flex-1 grid-cols-1 items-center gap-3 sm:gap-4 md:grid-cols-[0.72fr_1fr_0.72fr]`} key={page.id}>
+        <div className={`book-page-strip book-page-strip-${direction} grid min-w-0 grid-cols-1 items-center gap-4 xl:grid-cols-[0.68fr_minmax(0,1fr)_0.68fr]`} key={page.id}>
           {visiblePages(pages, pageIndex).map(({ page: previewPage, position }) => (
             <article
               aria-current={position === "current" ? "page" : undefined}
               className={`min-w-0 overflow-hidden rounded-[1.5rem] border bg-white transition-all dark:bg-slate-950 ${
                 position === "current"
-                  ? "w-full border-moss-100 shadow-xl shadow-moss-900/10 md:min-h-[500px]"
-                  : "hidden min-h-[380px] border-moss-100/70 opacity-70 shadow-sm md:block"
+                  ? "w-full border-moss-100 shadow-xl shadow-moss-900/10"
+                  : "hidden min-h-[420px] border-moss-100/70 opacity-70 shadow-sm xl:block"
               }`}
               key={`${previewPage.id}-${position}`}
             >
               <Artwork
-                className={position === "current" ? "aspect-[5/3] w-full" : "aspect-[4/3] w-full"}
+                className={position === "current" ? "aspect-[4/3] w-full sm:aspect-[5/3]" : "aspect-[4/3] w-full"}
+                fit="cover"
                 label="Page art is being prepared"
                 pendingLabel="Generating illustration"
                 src={previewPage.illustrationUrl}
               />
-              <div className={position === "current" ? "space-y-4 p-6 sm:p-8" : "space-y-2 p-4"}>
-                <p className="text-xs font-bold uppercase tracking-[0.18em] text-moss-700">Page {previewPage.pageNumber}</p>
-                <p className={position === "current" ? "text-base leading-7 text-moss-900 dark:text-slate-100 sm:text-lg sm:leading-8" : "line-clamp-3 text-sm leading-6 text-moss-700 dark:text-slate-300"}>{previewPage.text}</p>
+              <div className={position === "current" ? "p-4 sm:p-6" : "space-y-2 p-4"}>
+                <p className="text-xs font-bold uppercase tracking-[0.18em] text-moss-700 dark:text-slate-300">Page {previewPage.pageNumber}</p>
+                {position === "current" ? (
+                  <div className="mt-3 rounded-[1.15rem] border border-moon-100 bg-cream-50/80 px-4 py-5 text-center shadow-inner dark:border-white/10 dark:bg-white/8 sm:px-8 sm:py-7">
+                    <p className={`${webStoryFontClass(typography)} mx-auto max-w-3xl text-moss-900 dark:text-slate-100 ${webStoryTextClass(previewPage.text)}`}>{previewPage.text}</p>
+                  </div>
+                ) : (
+                  <p className="line-clamp-3 text-sm leading-6 text-moss-700 dark:text-slate-300">{previewPage.text}</p>
+                )}
               </div>
             </article>
           ))}
@@ -166,7 +171,7 @@ function PageStripPreview({ pages }: { pages: BookIssue["pages"] }) {
         />
       </div>
 
-      <div className="mt-5 flex items-center justify-center gap-2">
+      <div className="mt-5 flex items-center justify-center gap-2 overflow-x-auto px-2 pb-1">
         {pages.map((previewPage, index) => (
           <button
             aria-label={`Show page ${previewPage.pageNumber}`}
@@ -191,6 +196,24 @@ function visiblePages(pages: BookIssue["pages"], currentIndex: number) {
     { page: pages[currentIndex]!, position: "current" as const },
     { page: pages[nextIndex] ?? pages[currentIndex]!, position: "next" as const },
   ];
+}
+
+function webStoryTextClass(value: string) {
+  const length = value.trim().length;
+  if (length <= 165) return "text-xl leading-9 sm:text-2xl sm:leading-10";
+  if (length >= 310) return "text-lg leading-8 sm:text-xl sm:leading-9";
+  return "text-lg leading-8 sm:text-[1.35rem] sm:leading-10";
+}
+
+function webStoryFontClass(typography: BookIssue["typography"]) {
+  const classes: Record<BookIssue["typography"], string> = {
+    storybook: "font-story font-semibold",
+    adventure: "font-sans font-extrabold tracking-wide",
+    cozy: "font-storySerif font-bold",
+    mystery: "font-storySerif font-bold italic",
+    bedtime: "font-whimsy font-semibold",
+  };
+  return classes[typography];
 }
 
 function CarouselButton({
