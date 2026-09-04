@@ -68,6 +68,7 @@ export async function createBookIssueForSubscription(db: Db, subscriptionId: str
 }
 
 export async function setBookIssueStatus(db: Db, bookIssueId: string, status: BookIssueStatus, lastError?: string) {
+  const terminalGuard = status === "FAILED" ? inArray(bookIssues.status, ["SCHEDULED", "GENERATING", "QA", "READY", "DELIVERY_PENDING", "FAILED"]) : undefined;
   await db
     .update(bookIssues)
     .set({
@@ -78,7 +79,7 @@ export async function setBookIssueStatus(db: Db, bookIssueId: string, status: Bo
       readyAt: status === "READY" ? new Date().toISOString() : undefined,
       deliveredAt: status === "DELIVERED" ? new Date().toISOString() : undefined
     })
-    .where(eq(bookIssues.id, bookIssueId));
+    .where(terminalGuard ? and(eq(bookIssues.id, bookIssueId), terminalGuard) : eq(bookIssues.id, bookIssueId));
 }
 
 export async function claimBookIssueForGeneration(db: Db, bookIssueId: string) {
@@ -109,7 +110,7 @@ export async function failClaimedBookIssue(db: Db, bookIssueId: string, claimedA
       lastError,
       updatedAt: new Date().toISOString(),
     })
-    .where(and(eq(bookIssues.id, bookIssueId), tokenCondition));
+    .where(and(eq(bookIssues.id, bookIssueId), tokenCondition, inArray(bookIssues.status, ["SCHEDULED", "GENERATING", "QA", "READY", "DELIVERY_PENDING", "FAILED"])));
 }
 
 export async function listEpisodeSummaries(db: Db, childId: string, universeId: string, limit = 5) {

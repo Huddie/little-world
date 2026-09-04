@@ -646,7 +646,10 @@ export async function runScheduler(env: Env, now = new Date()) {
         orderBy: (table, { desc: descending }) => [descending(table.createdAt)]
       });
       if (openIssue) {
-        if (openIssue.status === "SCHEDULED" || openIssue.status === "FAILED") await startIssueWorkflow(db, env, openIssue.id);
+        if (["SCHEDULED", "READY", "DELIVERY_PENDING", "FAILED"].includes(openIssue.status)) {
+          if (openIssue.status !== "SCHEDULED") await clearIssueWorkflowLock(db, env, openIssue.id);
+          await startIssueWorkflow(db, env, openIssue.id);
+        }
         continue;
       }
       const issue = await createBookIssueForSubscription(db, subscription.id, new Date(subscription.nextIssueAt), childId);
@@ -676,7 +679,7 @@ async function startIssueWorkflow(db: Db, env: Env, bookIssueId: string) {
     });
     return;
   }
-  await startWorkflow(env, bookIssueId);
+  await startWorkflowForIssue(env, issue);
 }
 
 const storyRetrySteps: GenerationStepName[] = [
@@ -684,11 +687,13 @@ const storyRetrySteps: GenerationStepName[] = [
   "LOAD_CONTEXT",
   "GENERATE_OUTLINE",
   "GENERATE_MANUSCRIPT",
+  "CRAFT_REVISE_MANUSCRIPT",
   "REVISE_MANUSCRIPT",
   "STORY_QA",
   "SAVE_BOOK",
   "GENERATE_ILLUSTRATIONS",
   "RENDER_PDF",
+  "MARK_READY",
   "PERSIST_CANON",
   "SEND_DELIVERIES",
   "ADVANCE_SUBSCRIPTION",
@@ -737,10 +742,20 @@ async function clearIssueWorkflowLock(db: Db, env: Env, bookIssueId: string) {
   });
 }
 
-async function startWorkflow(env: Env, bookIssueId: string) {
+async function startWorkflowForIssue(env: Env, issue: typeof bookIssues.$inferSelect) {
+  const continueExistingBook = issue.status === "READY" || issue.status === "DELIVERY_PENDING";
   await env.GENERATE_BOOK_WORKFLOW.create({
-    id: `${bookIssueId}-${crypto.randomUUID()}`,
-    params: { bookIssueId }
+    id: `${issue.id}-${crypto.randomUUID()}`,
+    params: {
+      bookIssueId: issue.id,
+      ...(continueExistingBook
+        ? {
+            continueBook: true,
+            expectedStartedAt: issue.generationStartedAt,
+            expectedGenerationRunId: issue.generationRunId,
+          }
+        : {}),
+    }
   });
 }
 

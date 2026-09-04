@@ -6,7 +6,7 @@
   "scripts": {
     "dev": "vite",
     "worker:dev": "wrangler dev",
-    "build": "tsc -p tsconfig.app.json && tsc -p tsconfig.worker.json --noEmit && tsc -p tsconfig.node.json --noEmit && vite build",
+    "build": "tsc -p tsconfig.app.json --noEmit && tsc -p tsconfig.worker.json --noEmit && tsc -p tsconfig.node.json --noEmit && vite build",
     "preview": "vite preview",
     "typecheck": "tsc -p tsconfig.app.json --noEmit && tsc -p tsconfig.worker.json --noEmit",
     "worker:typecheck": "tsc -p tsconfig.worker.json --noEmit",

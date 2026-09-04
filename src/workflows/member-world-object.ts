@@ -43,9 +43,19 @@ export class MemberWorldObject extends DurableObject<Env> {
       return Response.json({ started: true, workflow: "build-world", startedAt });
     }
 
+    const continueExistingBook = issue.status === "READY" || issue.status === "DELIVERY_PENDING";
     await this.env.GENERATE_BOOK_WORKFLOW.create({
       id: `${issue.id}-${crypto.randomUUID()}`,
-      params: { bookIssueId: issue.id },
+      params: {
+        bookIssueId: issue.id,
+        ...(continueExistingBook
+          ? {
+              continueBook: true,
+              expectedStartedAt: issue.generationStartedAt,
+              expectedGenerationRunId: issue.generationRunId,
+            }
+          : {}),
+      },
     });
     return Response.json({ started: true, workflow: "generate-book", startedAt });
   }

@@ -58,6 +58,13 @@ class StaleGenerationError extends Error {
   }
 }
 
+class DeliveryConfigurationError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "DeliveryConfigurationError";
+  }
+}
+
 type ReferencePointer = {
   assetId: string;
   name: string;
@@ -172,6 +179,19 @@ export class GenerateBookWorkflow extends WorkflowEntrypoint<Env, GenerateBookPa
         });
       });
 
+      await step.do("mark ready", async () => {
+        return runGenerationStep({
+          store: stepStore,
+          bookIssueId: issueId,
+          step: "MARK_READY",
+          run: async () => {
+            await assertCurrentGeneration(db, issueId, claimedAt, generationRunId);
+            await setBookIssueStatus(db, issueId, "READY");
+            return { status: "READY" };
+          },
+        });
+      });
+
       await step.do("persist canon if needed", async () => {
         return runGenerationStep({
           store: stepStore,
@@ -224,7 +244,11 @@ export class GenerateBookWorkflow extends WorkflowEntrypoint<Env, GenerateBookPa
       if (error instanceof StaleGenerationError) {
         return { skipped: true, reason: "stale-generation-token" };
       }
-        await failClaimedBookIssue(db, issueId, claimedAt, error instanceof Error ? error.message : "Unknown workflow error", generationRunId);
+      if (error instanceof DeliveryConfigurationError) {
+        await setBookIssueStatus(db, issueId, "DELIVERY_PENDING", error.message);
+        return { pendingDelivery: true, error: error.message };
+      }
+      await failClaimedBookIssue(db, issueId, claimedAt, error instanceof Error ? error.message : "Unknown workflow error", generationRunId);
       throw error;
     }
   }
@@ -689,10 +713,10 @@ async function deliverPendingEmail(
   const pendingEmail = pending.filter((delivery) => delivery.method === "EMAIL");
   const emailApiKey = resendApiKey;
   if (pendingEmail.length > 0 && !emailApiKey) {
-    throw new Error("RESEND_API_KEY is required for email delivery");
+    throw new DeliveryConfigurationError("RESEND_API_KEY is required for email delivery");
   }
   if (pendingEmail.length === 0) return { sent: 0 };
-  if (!emailApiKey) throw new Error("RESEND_API_KEY is required for email delivery");
+  if (!emailApiKey) throw new DeliveryConfigurationError("RESEND_API_KEY is required for email delivery");
   const provider = new EmailDeliveryProvider(emailApiKey, resendFromEmail, assetStore, appBaseUrl);
   let sent = 0;
   for (const delivery of pending) {
