@@ -8,7 +8,7 @@ import { Button } from "../components/ui/Button";
 import { Card } from "../components/ui/Card";
 import { EmptyState } from "../components/ui/EmptyState";
 import { ErrorState } from "../components/ui/ErrorState";
-import { Field, Textarea } from "../components/ui/Form";
+import { Field, Textarea, TextInput } from "../components/ui/Form";
 import { LoadingState } from "../components/ui/LoadingState";
 import { StatusBadge } from "../components/ui/StatusBadge";
 import { apiClient } from "../lib/api-client";
@@ -75,7 +75,7 @@ export function DashboardPage() {
   return (
     <div className="space-y-8">
       {childId ? null : (
-        <div className="rounded-lg border border-moon-200 bg-white p-3 text-sm font-semibold text-moss-700">
+        <div className="rounded-lg border border-moon-200 bg-white p-3 text-sm font-semibold text-moss-700 dark:border-white/10 dark:bg-slate-950 dark:text-slate-300">
           Managing {activeDashboard.children.length} {activeDashboard.children.length === 1 ? "child" : "children"}.{" "}
           <Link className="font-black text-moon-700 hover:text-moon-900" to="/app/children">Manage children</Link>
         </div>
@@ -84,39 +84,39 @@ export function DashboardPage() {
         <Card className="overflow-hidden">
           <div className="grid gap-6 p-6 md:grid-cols-[1fr_190px] md:items-center">
             <div>
-              <div className="mb-4 inline-flex items-center gap-2 rounded-full bg-honey-100 px-3 py-1 text-sm font-semibold">
+              <div className="mb-4 inline-flex items-center gap-2 rounded-full bg-honey-100 px-3 py-1 text-sm font-semibold text-moss-900 dark:bg-honey-300/18 dark:text-honey-100">
                 <Sparkles size={16} />
                 {activeDashboard.subscription.product.universe.name}
               </div>
               <h1 className="text-3xl font-black tracking-normal sm:text-4xl">{collectionLabel}</h1>
-              <p className="mt-3 max-w-2xl text-base leading-7 text-moss-700">
+              <p className="mt-3 max-w-2xl text-base leading-7 text-moss-700 dark:text-slate-300">
                 Monthly personalized adventures with a recurring cast. The next story is handled automatically.
               </p>
               <div className="mt-5 flex flex-wrap gap-2">
                 <StatusBadge status={data.subscription.status} />
-                <span className="rounded-full bg-moon-100 px-2.5 py-1 text-xs font-semibold text-moon-900">
+                <span className="rounded-full bg-moon-100 px-2.5 py-1 text-xs font-semibold text-moon-900 dark:bg-moon-300/18 dark:text-moon-100">
                 Ages {activeDashboard.child.ageRange}
                 </span>
                 {activeDashboard.child.readingLevel ? (
-                  <span className="rounded-full bg-moon-100 px-2.5 py-1 text-xs font-semibold text-moon-900">
+                  <span className="rounded-full bg-moon-100 px-2.5 py-1 text-xs font-semibold text-moon-900 dark:bg-moon-300/18 dark:text-moon-100">
                     {activeDashboard.child.readingLevel}
                   </span>
                 ) : null}
                 {activeDashboard.child.storyGenres.map((genre) => (
-                  <span className="rounded-full bg-moon-100 px-2.5 py-1 text-xs font-semibold text-moon-900" key={genre}>
+                  <span className="rounded-full bg-moon-100 px-2.5 py-1 text-xs font-semibold text-moon-900 dark:bg-moon-300/18 dark:text-moon-100" key={genre}>
                     {genre}
                   </span>
                 ))}
               </div>
-              <div className="mt-5 rounded-lg border border-moss-100 bg-white p-4">
-                <div className="flex items-center gap-2 text-sm font-bold text-moss-900">
+              <div className="mt-5 rounded-lg border border-moss-100 bg-white p-4 dark:border-white/10 dark:bg-slate-950">
+                <div className="flex items-center gap-2 text-sm font-bold text-moss-900 dark:text-slate-100">
                   <Lock size={16} />
                   Locked story cast
                 </div>
                 <div className="mt-3 flex flex-wrap gap-2">
                   {activeDashboard.child.selectedCharacters.map((character) => (
                     <button
-                      className="rounded-full bg-moss-100 px-2.5 py-1 text-xs font-semibold text-moss-900 transition hover:bg-moss-200 focus:outline-none focus:ring-4 focus:ring-moon-100"
+                      className="rounded-full bg-moss-100 px-2.5 py-1 text-xs font-semibold text-moss-900 transition hover:bg-moss-200 focus:outline-none focus:ring-4 focus:ring-moon-100 dark:bg-white/10 dark:text-slate-100 dark:hover:bg-white/15 dark:focus:ring-moon-300/20"
                       key={character.characterId}
                       onClick={() => setSelectedCastMember(character)}
                       type="button"
@@ -127,7 +127,7 @@ export function DashboardPage() {
                 </div>
               </div>
             </div>
-            <div className="rounded-lg bg-moss-50 p-4">
+            <div className="rounded-lg bg-moss-50 p-4 dark:bg-white/8">
               <Artwork className="aspect-square w-full rounded-md" label="Cover art is being prepared" pendingLabel="Generating cover" src={activeDashboard.currentIssue.coverUrl} />
             </div>
           </div>
@@ -137,12 +137,12 @@ export function DashboardPage() {
           <div className="mb-5 flex items-center justify-between gap-3">
             <div>
               <h2 className="text-lg font-bold">{buildingWorld ? "Building world" : "Next story"}</h2>
-              <p className="text-sm text-moss-700">Episode {activeDashboard.currentIssue.episodeNumber}</p>
+              <p className="text-sm text-moss-700 dark:text-slate-300">Episode {activeDashboard.currentIssue.episodeNumber}</p>
             </div>
             <StatusBadge status={buildingWorld ? "GENERATING" : activeDashboard.currentIssue.status} />
           </div>
           <h3 className="text-xl font-black">{buildingWorld ? "Character portraits and style references are being prepared." : activeDashboard.currentIssue.title}</h3>
-          <div className="mt-4 grid gap-3 text-sm text-moss-700">
+          <div className="mt-4 grid gap-3 text-sm text-moss-700 dark:text-slate-300">
             <p className="flex items-center gap-2">
               <CalendarDays size={16} />
               Scheduled {formatDate(activeDashboard.currentIssue.scheduledFor)}
@@ -152,9 +152,9 @@ export function DashboardPage() {
               Email delivery selected
             </p>
           </div>
-          <div className="mt-5 rounded-lg bg-moss-50 p-4">
-            <p className="text-sm font-semibold text-moss-900">{buildingWorld ? "Building your little world..." : parentStatusCopy(activeDashboard.currentIssue.status)}</p>
-            <p className="mt-1 text-sm leading-6 text-moss-700">
+          <div className="mt-5 rounded-lg bg-moss-50 p-4 dark:bg-white/8">
+            <p className="text-sm font-semibold text-moss-900 dark:text-slate-100">{buildingWorld ? "Building your little world..." : parentStatusCopy(activeDashboard.currentIssue.status)}</p>
+            <p className="mt-1 text-sm leading-6 text-moss-700 dark:text-slate-300">
               {buildingWorld
                 ? "The first story will start after the world is ready."
                 : activeDashboard.currentIssue.status === "FAILED"
@@ -168,20 +168,20 @@ export function DashboardPage() {
       {buildingWorld ? (
         <Card className="p-6">
           <h2 className="text-2xl font-black">Building world...</h2>
-          <p className="mt-2 text-sm leading-6 text-moss-700">
+          <p className="mt-2 text-sm leading-6 text-moss-700 dark:text-slate-300">
             We’re preparing the recurring cast images and style references. Stories begin after this step completes.
           </p>
           <div className="mt-5 grid gap-4 sm:grid-cols-3">
             {activeDashboard.child.selectedCharacters.map((character) => (
-              <div className="rounded-lg border border-moon-200 bg-white p-3" key={character.characterId}>
+              <div className="rounded-lg border border-moon-200 bg-white p-3 dark:border-white/10 dark:bg-slate-950" key={character.characterId}>
                 <Artwork
                   className="aspect-square w-full rounded-md"
                   label={`${character.displayName} portraits are being prepared`}
                   pendingLabel="Building world"
                   src={character.profileImageUrls?.[0]}
                 />
-                <p className="mt-3 text-sm font-black text-moss-900">{character.displayName}</p>
-                <p className="mt-1 text-xs font-semibold text-moss-700">{character.imageStatus ?? "PENDING"}</p>
+                <p className="mt-3 text-sm font-black text-moss-900 dark:text-slate-100">{character.displayName}</p>
+                <p className="mt-1 text-xs font-semibold text-moss-700 dark:text-slate-300">{character.imageStatus ?? "PENDING"}</p>
               </div>
             ))}
           </div>
@@ -192,7 +192,7 @@ export function DashboardPage() {
           <div className="mb-4 flex items-end justify-between gap-4">
             <div>
               <h2 className="text-2xl font-black">Book collection</h2>
-              <p className="mt-1 text-sm text-moss-700">Completed episodes stay here for reading and downloads.</p>
+              <p className="mt-1 text-sm text-moss-700 dark:text-slate-300">Completed episodes stay here for reading and downloads.</p>
             </div>
           </div>
           <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
@@ -208,14 +208,14 @@ export function DashboardPage() {
               <Link2 size={18} />
               <h2 className="text-lg font-bold">Connected worlds</h2>
             </div>
-            <p className="text-sm leading-6 text-moss-700">
+            <p className="text-sm leading-6 text-moss-700 dark:text-slate-300">
               Invite another parent. If they accept, future stories may occasionally share a gentle adventure.
             </p>
             <div className="mt-4 space-y-3">
               {activeDashboard.relationships.length > 0 ? activeDashboard.relationships.map((relationship) => (
-                <div className="rounded-md border border-moss-100 p-3" key={relationship.id}>
+                <div className="rounded-md border border-moss-100 p-3 dark:border-white/10" key={relationship.id}>
                   <div className="flex items-center justify-between gap-3">
-                    <p className="text-sm font-semibold text-moss-900">{relationship.direction === "INCOMING" ? "Incoming invite" : "World connection"}</p>
+                    <p className="text-sm font-semibold text-moss-900 dark:text-slate-100">{relationship.direction === "INCOMING" ? "Incoming invite" : "World connection"}</p>
                     <StatusBadge status={relationship.status === "ACTIVE" ? "ACTIVE" : relationship.status === "PENDING" ? "SCHEDULED" : "FAILED"} />
                   </div>
                   {relationship.canAccept ? (
@@ -225,12 +225,11 @@ export function DashboardPage() {
                     </div>
                   ) : null}
                 </div>
-              )) : <p className="rounded-md bg-moss-50 p-3 text-sm text-moss-700">No connected worlds yet.</p>}
+              )) : <p className="rounded-md bg-moss-50 p-3 text-sm text-moss-700 dark:bg-white/8 dark:text-slate-300">No connected worlds yet.</p>}
             </div>
             <div className="mt-4 grid gap-3">
               <Field hint="Parent-controlled only. No child search or public profiles." label="Invite parent email">
-                <input
-                  className="h-11 w-full rounded-md border border-moss-100 bg-white px-3 text-sm text-moss-900 outline-none transition placeholder:text-moss-700/45 focus:border-moon-400 focus:ring-4 focus:ring-moon-100"
+                <TextInput
                   onChange={(event) => setInviteEmail(event.target.value)}
                   placeholder="friend@example.com"
                   type="email"
@@ -253,7 +252,7 @@ export function DashboardPage() {
               <Textarea onChange={(event) => setNotes(event.target.value)} value={notes} />
             </Field>
             <div className="mt-4 flex items-center justify-between gap-3">
-              <p className="text-xs font-semibold text-moss-700">{saved ? "Saved for future episodes." : "Used as gentle guidance."}</p>
+              <p className="text-xs font-semibold text-moss-700 dark:text-slate-300">{saved ? "Saved for future episodes." : "Used as gentle guidance."}</p>
               <Button
                 onClick={() => {
                   void apiClient.saveStoryInspiration(notes).then(() => setSaved(true));

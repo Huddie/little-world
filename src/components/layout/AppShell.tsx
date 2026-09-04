@@ -164,7 +164,7 @@ function ChildSwitcher() {
 
   if (children.length === 0) {
     return (
-      <Link className="inline-flex h-10 items-center justify-center rounded-md border border-moon-200 bg-white px-3 text-sm font-bold text-moss-900 shadow-sm" to="/onboarding">
+      <Link className="inline-flex h-10 items-center justify-center rounded-md border border-moon-200 bg-white px-3 text-sm font-bold text-moss-900 shadow-sm dark:border-white/15 dark:bg-slate-900 dark:text-slate-100" to="/onboarding">
         Add child
       </Link>
     );
@@ -178,20 +178,20 @@ function ChildSwitcher() {
   return (
     <div className="relative" ref={containerRef}>
       <button
-        className="inline-flex h-10 max-w-[240px] items-center gap-2 rounded-md border border-moon-200 bg-white px-3 text-sm font-bold text-moss-900 shadow-sm transition hover:border-moon-300"
+        className="inline-flex h-10 max-w-[240px] items-center gap-2 rounded-md border border-moon-200 bg-white px-3 text-sm font-bold text-moss-900 shadow-sm transition hover:border-moon-300 dark:border-white/15 dark:bg-slate-900 dark:text-slate-100 dark:hover:border-moon-300"
         onClick={() => setOpen((value) => !value)}
         type="button"
       >
         <Baby size={16} />
         <span className="truncate">{childLabel(activeChild, activeChildIndex)}</span>
-        <span className="rounded-full bg-moon-100 px-2 py-0.5 text-[11px] font-bold">{activeChild.worldBuildStatus === "READY" ? "Ready" : "Building"}</span>
+        <span className="rounded-full bg-moon-100 px-2 py-0.5 text-[11px] font-bold dark:bg-white/10 dark:text-moon-100">{activeChild.worldBuildStatus === "READY" ? "Ready" : "Building"}</span>
         <ChevronDown size={14} />
       </button>
       {open ? (
-        <div className="absolute right-0 z-40 mt-2 w-72 overflow-hidden rounded-xl border border-moon-200 bg-white shadow-xl shadow-moss-900/10">
+        <div className="absolute right-0 z-40 mt-2 w-72 overflow-hidden rounded-xl border border-moon-200 bg-white shadow-xl shadow-moss-900/10 dark:border-white/10 dark:bg-slate-950 dark:shadow-black/30">
           {children.map((child, index) => (
             <button
-              className="block w-full px-4 py-3 text-left transition hover:bg-moon-50"
+              className="block w-full px-4 py-3 text-left transition hover:bg-moon-50 dark:hover:bg-white/8"
               key={child.id}
               onClick={() => {
                 window.sessionStorage.setItem("little-world:active-child-id", child.id);
@@ -200,16 +200,16 @@ function ChildSwitcher() {
               }}
               type="button"
             >
-              <span className="block text-sm font-black text-moss-900">{childLabel(child, index)}</span>
-              <span className="mt-1 block text-xs font-semibold text-moss-700">
+              <span className="block text-sm font-black text-moss-900 dark:text-slate-100">{childLabel(child, index)}</span>
+              <span className="mt-1 block text-xs font-semibold text-moss-700 dark:text-slate-300">
                 {child.worldBuildStatus === "READY" ? "Ready" : "Building world"} · {child.latestBookStatus ?? "No story yet"}
               </span>
             </button>
           ))}
-          <Link className="block border-t border-moon-100 px-4 py-3 text-sm font-bold text-moss-900 hover:bg-moon-50" onClick={() => setOpen(false)} to="/onboarding">
+          <Link className="block border-t border-moon-100 px-4 py-3 text-sm font-bold text-moss-900 hover:bg-moon-50 dark:border-white/10 dark:text-slate-100 dark:hover:bg-white/8" onClick={() => setOpen(false)} to="/onboarding">
             + Add child
           </Link>
-          <Link className="block border-t border-moon-100 px-4 py-3 text-sm font-bold text-moss-900 hover:bg-moon-50" onClick={() => setOpen(false)} to="/app/children">
+          <Link className="block border-t border-moon-100 px-4 py-3 text-sm font-bold text-moss-900 hover:bg-moon-50 dark:border-white/10 dark:text-slate-100 dark:hover:bg-white/8" onClick={() => setOpen(false)} to="/app/children">
             Manage children
           </Link>
         </div>

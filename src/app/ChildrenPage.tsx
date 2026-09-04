@@ -58,7 +58,7 @@ function ChildCard({ child, onChanged }: { child: ChildSummary; onChanged: () =>
     <Card className="p-5">
       <div className="flex items-start justify-between gap-4">
         <div className="flex min-w-0 items-start gap-3">
-          <div className="grid h-12 w-12 shrink-0 place-items-center rounded-md bg-moon-100 text-moss-700">
+          <div className="grid h-12 w-12 shrink-0 place-items-center rounded-md bg-moon-100 text-moss-700 dark:bg-white/10 dark:text-moon-200">
             {child.worldBuildStatus === "READY" ? <Sparkles size={20} /> : <Baby size={20} />}
           </div>
           <div className="min-w-0">

@@ -3,10 +3,10 @@ import type { ButtonHTMLAttributes, ReactNode } from "react";
 type ButtonVariant = "primary" | "secondary" | "ghost" | "danger";
 
 const variantClassName: Record<ButtonVariant, string> = {
-  primary: "bg-moss-700 text-white shadow-sm shadow-moss-900/15 hover:bg-moss-800 dark:bg-moss-500 dark:text-slate-950 dark:hover:bg-moss-300",
-  secondary: "border border-moon-200 bg-white/90 text-moss-900 hover:border-moon-300 hover:bg-white dark:border-white/15 dark:bg-white/8 dark:text-white dark:hover:bg-white/12",
-  ghost: "text-moss-900 hover:bg-moon-50 dark:text-slate-100 dark:hover:bg-white/8",
-  danger: "bg-petal-500 text-white hover:bg-petal-500/90 dark:bg-petal-300 dark:text-slate-950",
+  primary: "bg-moss-700 text-white shadow-sm shadow-moss-900/15 hover:bg-moss-800 dark:bg-moss-300 dark:text-slate-950 dark:hover:bg-moss-200",
+  secondary: "border border-moon-200 bg-white text-moss-900 shadow-sm shadow-moon-900/5 hover:border-moon-400 hover:bg-moon-50 dark:border-white/15 dark:bg-slate-900 dark:text-slate-100 dark:hover:border-moon-300 dark:hover:bg-slate-800",
+  ghost: "text-moss-900 hover:bg-moon-50 dark:text-slate-100 dark:hover:bg-white/10",
+  danger: "bg-petal-500 text-white hover:bg-petal-500/90 dark:bg-petal-300 dark:text-slate-950 dark:hover:bg-petal-100",
 };
 
 interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {

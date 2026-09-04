@@ -98,13 +98,13 @@ function PageStripPreview({ pages }: { pages: BookIssue["pages"] }) {
           onClick={() => showPage(pageIndex - 1, "previous")}
         />
 
-        <div className={`book-page-strip book-page-strip-${direction} grid min-w-0 flex-1 grid-cols-[0.72fr_1fr_0.72fr] items-center gap-3 sm:gap-4`} key={page.id}>
+        <div className={`book-page-strip book-page-strip-${direction} grid min-w-0 flex-1 grid-cols-1 items-center gap-3 sm:gap-4 md:grid-cols-[0.72fr_1fr_0.72fr]`} key={page.id}>
           {visiblePages(pages, pageIndex).map(({ page: previewPage, position }) => (
             <article
               aria-current={position === "current" ? "page" : undefined}
-              className={`min-w-0 overflow-hidden rounded-[1.5rem] border bg-white transition-all ${
+              className={`min-w-0 overflow-hidden rounded-[1.5rem] border bg-white transition-all dark:bg-slate-950 ${
                 position === "current"
-                  ? "min-h-[500px] border-moss-100 shadow-xl shadow-moss-900/10"
+                  ? "w-full border-moss-100 shadow-xl shadow-moss-900/10 md:min-h-[500px]"
                   : "hidden min-h-[380px] border-moss-100/70 opacity-70 shadow-sm md:block"
               }`}
               key={`${previewPage.id}-${position}`}
@@ -117,7 +117,7 @@ function PageStripPreview({ pages }: { pages: BookIssue["pages"] }) {
               />
               <div className={position === "current" ? "space-y-4 p-6 sm:p-8" : "space-y-2 p-4"}>
                 <p className="text-xs font-bold uppercase tracking-[0.18em] text-moss-700">Page {previewPage.pageNumber}</p>
-                <p className={position === "current" ? "text-lg leading-8 text-moss-900" : "line-clamp-3 text-sm leading-6 text-moss-700"}>{previewPage.text}</p>
+                <p className={position === "current" ? "text-base leading-7 text-moss-900 dark:text-slate-100 sm:text-lg sm:leading-8" : "line-clamp-3 text-sm leading-6 text-moss-700 dark:text-slate-300"}>{previewPage.text}</p>
               </div>
             </article>
           ))}
@@ -175,7 +175,7 @@ function CarouselButton({
   return (
     <button
       aria-label={ariaLabel}
-      className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full border border-moss-100 bg-white text-moss-900 shadow-sm transition hover:border-moss-500 disabled:cursor-not-allowed disabled:opacity-40"
+      className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full border border-moss-100 bg-white text-moss-900 shadow-sm transition hover:border-moss-500 disabled:cursor-not-allowed disabled:opacity-40 dark:border-white/15 dark:bg-slate-950 dark:text-slate-100 dark:hover:border-moon-300"
       disabled={disabled}
       onClick={onClick}
       type="button"

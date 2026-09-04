@@ -1,4 +1,4 @@
-import { CalendarDays, CreditCard, Edit3, LogOut, Mail, PackageCheck, Settings, Trash2, X } from "lucide-react";
+import { Baby, CalendarDays, CreditCard, Edit3, LogOut, Mail, PackageCheck, Settings, Sparkles, Trash2, X } from "lucide-react";
 import { useState } from "react";
 import { Link } from "react-router-dom";
 import { Card } from "../components/ui/Card";
@@ -43,7 +43,7 @@ export function AccountPage() {
     return <ErrorState message={dashboard.error.message} onRetry={dashboard.reload} title="Could not load account" />;
   }
 
-  const { child, subscription, user } = dashboard.data;
+  const { child, children, subscription, user } = dashboard.data;
   const deliveryMethods = subscription.deliveryMethods.map((method) => method === "EMAIL" ? "Email" : "Printed book").join(", ");
 
   return (
@@ -130,6 +130,26 @@ export function AccountPage() {
           <Link to="/app/children">
             <Button variant="secondary">Manage children</Button>
           </Link>
+        </div>
+        <div className="mt-5 grid gap-3 sm:grid-cols-2">
+          {children.filter((item) => !item.archivedAt).map((item, index) => (
+            <div className="flex items-center justify-between gap-3 rounded-lg border border-moon-200 p-3 dark:border-white/10" key={item.id}>
+              <div className="flex min-w-0 items-center gap-3">
+                <div className="grid h-10 w-10 shrink-0 place-items-center rounded-md bg-moon-100 text-moss-700 dark:bg-white/10 dark:text-moon-200">
+                  {item.worldBuildStatus === "READY" ? <Sparkles size={18} /> : <Baby size={18} />}
+                </div>
+                <div className="min-w-0">
+                  <p className="truncate text-sm font-black text-moss-900 dark:text-white">{childAccountLabel(item.firstName, index)}</p>
+                  <p className="mt-0.5 text-xs font-semibold text-moss-700 dark:text-slate-300">
+                    Ages {item.ageRange} · {item.worldBuildStatus === "READY" ? "Ready" : "Building world"}
+                  </p>
+                </div>
+              </div>
+              <Link className="shrink-0" to={`/app/children/${item.id}`}>
+                <Button variant="secondary">Open world</Button>
+              </Link>
+            </div>
+          ))}
         </div>
       </Card>
 
@@ -458,6 +478,10 @@ function frequencyLabel(frequency: "WEEKLY" | "BIWEEKLY" | "MONTHLY") {
   if (frequency === "WEEKLY") return "Weekly";
   if (frequency === "BIWEEKLY") return "Bi-weekly";
   return "Monthly";
+}
+
+function childAccountLabel(firstName: string | null, index: number) {
+  return firstName?.trim() || `Kid ${index + 1}`;
 }
 
 function sameDeliveryMethods(left: string[], right: string[]) {

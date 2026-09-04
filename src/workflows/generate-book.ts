@@ -738,11 +738,17 @@ async function loadStoryContext(db: Db, bookIssueId: string, env?: Env): Promise
 }
 
 function coverPrompt(context: StoryContext, title: string): string {
-  return `Cover art for ${title}, featuring ${context.characters.map((character) => character.name).join(", ")} inside a growing Little World.`;
+  return [
+    `Cover illustration for the story "${title}".`,
+    `Feature only the locked cast: ${context.characters.map((character) => character.name).join(", ")}.`,
+    "Use the supplied character reference images as identity anchors.",
+    "No words, no letters, no signage, no title text, no captions, and no typography anywhere in the image.",
+    "Leave the story title to the PDF layout."
+  ].join(" ");
 }
 
 function characterStyleGuide(context: StoryContext): string {
-  return `Polished modern children's picture book art. Warm, simple, expressive, safe for ages ${context.child.ageRange}. ${hardCharacterRules(context.characters)} Character canon: ${context.characters
+  return `Polished modern children's picture book art. Warm, simple, expressive, safe for ages ${context.child.ageRange}. Never render text, letters, numbers, captions, logos, watermarks, or title typography inside illustrations. ${hardCharacterRules(context.characters)} Character canon: ${context.characters
     .map((character) => `${character.name} (${character.baseName}, ${character.role.toLowerCase()}): ${character.visualDescriptionJson}. Hidden style references: ${character.hiddenStyleReferencesJson}`)
     .join(" ")}`;
 }
