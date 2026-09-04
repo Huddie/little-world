@@ -50,6 +50,7 @@ CLOUDFLARE_API_TOKEN=<production deploy token>
 OPENAI_API_KEY=<your OpenAI key>
 RESEND_API_KEY=<your Resend key>
 BETTER_AUTH_SECRET=<same production auth secret>
+MCP_SHARED_SECRET=<long random secret for live MCP context API>
 ```
 
 Location:
@@ -98,12 +99,43 @@ If enabled, set this Worker variable:
 ENABLE_CLOUDFLARE_ACCESS_AUTH=true
 ```
 
-### 5. First admin login
+### 5. Live MCP context API
+
+The Little World MCP server now reads live production context through a protected API instead of mock data.
+
+Create a long random secret locally:
+
+```sh
+openssl rand -base64 48
+```
+
+Put it in `.env`:
+
+```txt
+MCP_SHARED_SECRET=<generated value>
+LITTLE_WORLD_API_BASE_URL=https://littleworldstory.com
+LITTLE_WORLD_MCP_SHARED_SECRET=<same generated value>
+```
+
+Upload the Worker secret:
+
+```sh
+set -a; source .env; set +a; printf "%s" "$MCP_SHARED_SECRET" | ./node_modules/.bin/wrangler secret put MCP_SHARED_SECRET
+```
+
+Use these env vars when starting the MCP server:
+
+```txt
+LITTLE_WORLD_API_BASE_URL=https://littleworldstory.com
+LITTLE_WORLD_MCP_SHARED_SECRET=<same generated value>
+```
+
+### 6. First admin login
 
 Current bootstrap admin email is configured in `wrangler.jsonc`:
 
 ```txt
-ADMIN_EMAILS=adlerehud@gmail.com
+ADMIN_EMAILS=adlerehud@gmail.com,easports96@gmail.com
 ```
 
 Sign in at:

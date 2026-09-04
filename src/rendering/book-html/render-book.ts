@@ -6,8 +6,10 @@ export function renderBookHtml(input: {
   episodeNumber: number;
   manuscript: StoryManuscript;
   illustrations?: Record<number, string>;
+  cast?: Array<{ name: string; portraitUrl?: string | null }>;
   collection: Array<{ episodeNumber: number; title: string }>;
 }): string {
+  const typography = typographyTheme(input.manuscript.typography ?? "storybook");
   const pages = input.manuscript.pages
     .map(
       (page) => `
@@ -17,8 +19,12 @@ export function renderBookHtml(input: {
         </section>`
     )
     .join("");
-  const collection = input.collection
-    .map((episode) => `<li>Episode ${episode.episodeNumber} - ${escapeHtml(episode.title)}</li>`)
+  const cast = (input.cast ?? [])
+    .map((character) => `
+      <li class="cast-member">
+        ${character.portraitUrl ? `<img class="cast-portrait" src="${character.portraitUrl}" alt="">` : `<div class="cast-portrait"></div>`}
+        <span>${escapeHtml(character.name)}</span>
+      </li>`)
     .join("");
   const coverArt = input.illustrations?.[1] ? `<img class="cover-art" src="${input.illustrations[1]}" alt="">` : "";
 
@@ -29,7 +35,7 @@ export function renderBookHtml(input: {
 <style>
 @page { size: Letter; margin: 0.4in; }
 * { box-sizing: border-box; }
-body { color: #244536; font-family: Georgia, serif; margin: 0; background: #fffaf0; }
+body { color: #244536; font-family: ${typography.body}; margin: 0; background: #fffaf0; }
 .cover, .page, .collection {
   break-after: page;
   page-break-after: always;
@@ -55,7 +61,7 @@ body { color: #244536; font-family: Georgia, serif; margin: 0; background: #fffa
   border-radius: 20px;
   margin-bottom: 0.28in;
 }
-h1 { font-size: 38px; line-height: 1.08; margin: 0 0 10px; }
+h1 { font-family: ${typography.heading}; font-size: 38px; line-height: 1.08; margin: 0 0 10px; }
 h2 { font-size: 18px; margin: 0; color: #53645c; }
 .page {
   justify-content: flex-start;
@@ -86,17 +92,44 @@ h2 { font-size: 18px; margin: 0; color: #53645c; }
   break-after: auto;
   page-break-after: auto;
   justify-content: center;
+  align-items: center;
+  text-align: center;
   padding: 0.5in;
   border-radius: 22px;
   background: #f7efd4;
 }
-li { font-size: 18px; margin: 8px 0; }
+.cast-list {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 24px;
+  list-style: none;
+  margin: 28px 0 0;
+  padding: 0;
+}
+.cast-member {
+  width: 132px;
+  color: #244536;
+  font-size: 18px;
+  font-weight: 800;
+}
+.cast-portrait {
+  display: block;
+  width: 112px;
+  height: 112px;
+  margin: 0 auto 12px;
+  object-fit: cover;
+  border: 5px solid #fffdf6;
+  border-radius: 999px;
+  background: linear-gradient(145deg, #dff1df, #f0c76b);
+  box-shadow: 0 10px 28px rgba(36, 69, 54, 0.18);
+}
 </style>
 </head>
 <body>
 <section class="cover">${coverArt}<h1>${escapeHtml(input.title)}</h1><h2>${escapeHtml(input.collectionName)} - Episode ${input.episodeNumber}</h2></section>
 ${pages}
-<section class="collection"><h1>${escapeHtml(input.collectionName)}</h1><ul>${collection}</ul><p>Episode ${input.episodeNumber + 1} coming next month...</p></section>
+<section class="collection"><h1>Story cast</h1><h2>${escapeHtml(input.collectionName)} - Episode ${input.episodeNumber}</h2><ul class="cast-list">${cast}</ul></section>
 </body>
 </html>`;
 }
@@ -107,4 +140,19 @@ function escapeHtml(value: string): string {
 
 function formatStoryText(value: string): string {
   return escapeHtml(value).replace(/\n{2,}/g, "<br><br>").replace(/\n/g, "<br>");
+}
+
+function typographyTheme(theme: StoryManuscript["typography"]) {
+  const rounded = '"Trebuchet MS", "Arial Rounded MT Bold", "Comic Sans MS", Arial, sans-serif';
+  const cozySerif = 'Georgia, "Times New Roman", serif';
+  const playful = '"Comic Sans MS", "Trebuchet MS", "Arial Rounded MT Bold", Arial, sans-serif';
+  const clean = '"Avenir Next", "Trebuchet MS", Arial, sans-serif';
+  const themes = {
+    storybook: { body: rounded, heading: rounded },
+    adventure: { body: clean, heading: '"Trebuchet MS", "Arial Rounded MT Bold", Arial, sans-serif' },
+    cozy: { body: cozySerif, heading: cozySerif },
+    mystery: { body: 'Georgia, "Trebuchet MS", serif', heading: 'Georgia, "Trebuchet MS", serif' },
+    bedtime: { body: cozySerif, heading: '"Trebuchet MS", Georgia, serif' },
+  } satisfies Record<StoryManuscript["typography"], { body: string; heading: string }>;
+  return themes[theme] ?? themes.storybook;
 }

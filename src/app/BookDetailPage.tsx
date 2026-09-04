@@ -1,4 +1,4 @@
-import { ArrowLeft, ChevronLeft, ChevronRight, Download } from "lucide-react";
+import { ArrowLeft, ChevronLeft, ChevronRight, Download, Mail } from "lucide-react";
 import type React from "react";
 import { useState } from "react";
 import { Link, useParams } from "react-router-dom";
@@ -19,6 +19,9 @@ export function BookDetailPage() {
     if (!id) throw new Error("Missing book id");
     return apiClient.getBookIssue(id);
   }, [id]);
+  const [resending, setResending] = useState(false);
+  const [resent, setResent] = useState(false);
+  const [resendError, setResendError] = useState<Error | null>(null);
 
   if (bookResource.status === "loading") {
     return <LoadingState label="Loading book" />;
@@ -39,7 +42,7 @@ export function BookDetailPage() {
 
       <section className="grid gap-6 lg:grid-cols-[0.85fr_1.15fr]">
         <Card className="overflow-hidden">
-          <Artwork className="aspect-[4/3] w-full" label="Cover art is being prepared" pendingLabel="Generating cover" src={book.coverUrl} />
+          <Artwork className="aspect-[4/3] w-full" fit="cover" label="Cover art is being prepared" pendingLabel="Generating cover" src={book.coverUrl} />
           <div className="space-y-4 p-5">
             <div className="flex items-center justify-between gap-3">
               <span className="text-sm font-bold uppercase tracking-wide text-moss-700">Episode {book.episodeNumber}</span>
@@ -50,10 +53,39 @@ export function BookDetailPage() {
               {book.subtitle ? <p className="mt-2 text-moss-700">{book.subtitle}</p> : null}
             </div>
             <p className="text-sm leading-6 text-moss-700">Scheduled {formatDate(book.scheduledFor)}</p>
-            <Button disabled={!book.pdfUrl}>
-              <Download size={16} />
-              Download PDF
-            </Button>
+            <div className="flex flex-wrap gap-3">
+              {book.pdfUrl ? (
+                <Button onClick={() => window.location.assign(book.pdfUrl as string)}>
+                  <Download size={16} />
+                  Download PDF
+                </Button>
+              ) : (
+                <Button disabled>
+                  <Download size={16} />
+                  Download PDF
+                </Button>
+              )}
+              {book.status === "DELIVERED" ? (
+                <Button
+                  disabled={resending}
+                  onClick={() => {
+                    setResending(true);
+                    setResent(false);
+                    setResendError(null);
+                    void apiClient.resendBookEmail(book.id)
+                      .then(() => setResent(true))
+                      .catch((caught: unknown) => setResendError(caught instanceof Error ? caught : new Error("Could not resend email")))
+                      .finally(() => setResending(false));
+                  }}
+                  variant="secondary"
+                >
+                  <Mail size={16} />
+                  {resending ? "Sending..." : "Resend email"}
+                </Button>
+              ) : null}
+            </div>
+            {resent ? <p className="text-sm font-semibold text-moss-700 dark:text-slate-300">Email sent.</p> : null}
+            {resendError ? <p className="text-sm font-semibold text-petal-500">{resendError.message}</p> : null}
           </div>
         </Card>
 

@@ -80,20 +80,25 @@ export async function setBookIssueStatus(db: Db, bookIssueId: string, status: Bo
 
 export async function claimBookIssueForGeneration(db: Db, bookIssueId: string) {
   const now = new Date().toISOString();
+  const generationRunId = newId("run");
   const result = await db
     .update(bookIssues)
     .set({
       status: "GENERATING",
       lastError: null,
       generationStartedAt: now,
+      generationRunId,
       updatedAt: now,
     })
     .where(and(eq(bookIssues.id, bookIssueId), inArray(bookIssues.status, ["SCHEDULED", "FAILED"])));
-  return result.meta.changes > 0 ? { claimed: true as const, claimedAt: now } : { claimed: false as const, claimedAt: null };
+  return result.meta.changes > 0 ? { claimed: true as const, claimedAt: now, generationRunId } : { claimed: false as const, claimedAt: null, generationRunId: null };
 }
 
-export async function failClaimedBookIssue(db: Db, bookIssueId: string, claimedAt: string | null, lastError: string) {
+export async function failClaimedBookIssue(db: Db, bookIssueId: string, claimedAt: string | null, lastError: string, generationRunId?: string | null) {
   if (!claimedAt) return;
+  const tokenCondition = generationRunId
+    ? and(eq(bookIssues.generationStartedAt, claimedAt), eq(bookIssues.generationRunId, generationRunId))
+    : eq(bookIssues.generationStartedAt, claimedAt);
   await db
     .update(bookIssues)
     .set({
@@ -101,7 +106,7 @@ export async function failClaimedBookIssue(db: Db, bookIssueId: string, claimedA
       lastError,
       updatedAt: new Date().toISOString(),
     })
-    .where(and(eq(bookIssues.id, bookIssueId), eq(bookIssues.generationStartedAt, claimedAt)));
+    .where(and(eq(bookIssues.id, bookIssueId), tokenCondition));
 }
 
 export async function listEpisodeSummaries(db: Db, childId: string, universeId: string, limit = 5) {

@@ -5,15 +5,21 @@ type ArtworkProps = {
   src?: string | null;
   alt?: string;
   className?: string;
+  fit?: "contain" | "cover";
   label?: string;
   pendingLabel?: string;
 };
 
 const loadedImages = new Set<string>();
+const fitClassName = {
+  contain: "object-contain",
+  cover: "object-cover",
+};
 
 export function Artwork({
   alt = "",
   className = "aspect-[4/3] w-full",
+  fit = "contain",
   label = "Artwork is being prepared",
   pendingLabel = "Generating illustration",
   src,
@@ -81,5 +87,12 @@ export function Artwork({
     );
   }
 
-  return <img alt={alt} className={`${className} object-cover`} onError={() => setFailed(true)} src={src} />;
+  return (
+    <img
+      alt={alt}
+      className={`${className} bg-moon-50 ${fitClassName[fit]} dark:bg-slate-900`}
+      onError={() => setFailed(true)}
+      src={src}
+    />
+  );
 }

@@ -5,7 +5,7 @@ export interface Env {
   MEMBER_WORLD?: DurableObjectNamespace;
   BROWSER: Fetcher;
   ASSETS: Fetcher;
-  GENERATE_BOOK_WORKFLOW: Workflow<{ bookIssueId: string; backfillOnly?: boolean; continueBook?: boolean; expectedStartedAt?: string | null; memoryBackfillOnly?: boolean }>;
+  GENERATE_BOOK_WORKFLOW: Workflow<{ bookIssueId: string; backfillOnly?: boolean; continueBook?: boolean; expectedStartedAt?: string | null; expectedGenerationRunId?: string | null; memoryBackfillOnly?: boolean }>;
   BUILD_WORLD_WORKFLOW: Workflow<{ childId: string; firstIssueId: string }>;
   APP_BASE_URL: string;
   OPENAI_API_KEY?: string;
@@ -19,4 +19,5 @@ export interface Env {
   BETTER_AUTH_SECRET?: string;
   ADMIN_EMAILS?: string;
   ENABLE_CLOUDFLARE_ACCESS_AUTH?: string;
+  MCP_SHARED_SECRET?: string;
 }

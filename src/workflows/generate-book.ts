@@ -6,20 +6,17 @@ import { OpenAiIllustrationGenerator } from "../ai/illustrations/openai-illustra
 import type { QaResult, StoryContext, StoryManuscript, StoryOutline } from "../ai/story/schemas";
 import { OpenAiStoryGenerator } from "../ai/story/openai-story-generator";
 import type { StoryGenerator } from "../ai/story/story-generator";
-import { addCanonEvents, relevantCanon } from "../domain/canon/service";
+import { addCanonEvents } from "../domain/canon/service";
 import { claimBookIssueForGeneration, failClaimedBookIssue, listEpisodeSummaries, setBookIssueStatus } from "../domain/books/service";
 import { newId } from "../domain/ids";
 import { parseJson, stringArraySchema } from "../domain/json";
 import {
-  buildMemoryRetrievalQuery,
   OpenAiEmbeddingClient,
   pageAssetIdsByNumber,
   persistExtractedMemory,
-  retrieveStoryMemory,
-  semanticMemoryMatches,
   syncMemoryEmbeddings,
 } from "../domain/memory/service";
-import { listActiveConnectedChildren } from "../domain/relationships/service";
+import { loadStoryContext } from "../domain/story-context/service";
 import { advanceSubscriptionAfterIssue } from "../domain/subscriptions/service";
 import { renderBookHtml } from "../rendering/book-html/render-book";
 import { BrowserPdfRenderer } from "../rendering/pdf/pdf-renderer";
@@ -30,15 +27,12 @@ import {
   bookPages,
   bookIssues,
   books,
-  characters,
   deliveries,
   episodeSummaries,
   memoryEvents,
   qaResults,
-  storyExamples,
   subscriptionDeliveryMethods,
   subscriptions,
-  universes
 } from "../server/db/schema";
 import { R2AssetStore } from "../storage/asset-store";
 import { signInternalAssetUrl } from "../storage/internal-asset-signing";
@@ -51,6 +45,7 @@ type GenerateBookParams = {
   backfillOnly?: boolean;
   continueBook?: boolean;
   expectedStartedAt?: string | null;
+  expectedGenerationRunId?: string | null;
   memoryBackfillOnly?: boolean;
 };
 
@@ -90,8 +85,11 @@ export class GenerateBookWorkflow extends WorkflowEntrypoint<Env, GenerateBookPa
     if (event.payload.expectedStartedAt && issue.generationStartedAt !== event.payload.expectedStartedAt) {
       return { skipped: true, reason: "stale-generation-token" };
     }
+    if (event.payload.expectedGenerationRunId && issue.generationRunId !== event.payload.expectedGenerationRunId) {
+      return { skipped: true, reason: "stale-generation-token" };
+    }
 
-    const assetStore = new R2AssetStore(db, this.env.BOOK_ASSETS, this.env.APP_BASE_URL);
+    const assetStore = new R2AssetStore(db, this.env.BOOK_ASSETS, this.env.APP_BASE_URL, this.env.BETTER_AUTH_SECRET);
     if (!this.env.OPENAI_API_KEY) {
       throw new Error("OPENAI_API_KEY is required to generate books");
     }
@@ -99,6 +97,7 @@ export class GenerateBookWorkflow extends WorkflowEntrypoint<Env, GenerateBookPa
     const illustrationGenerator = new OpenAiIllustrationGenerator(this.env.OPENAI_API_KEY, this.env.OPENAI_IMAGE_MODEL);
     const pdfRenderer = new BrowserPdfRenderer(this.env.BROWSER);
     let claimedAt: string | null = null;
+    let generationRunId: string | null = null;
 
     try {
       if (event.payload.memoryBackfillOnly) {
@@ -131,16 +130,17 @@ export class GenerateBookWorkflow extends WorkflowEntrypoint<Env, GenerateBookPa
 
       if (event.payload.backfillOnly || event.payload.continueBook) {
         claimedAt = issue.generationStartedAt;
-        const context = await step.do("load context", async () => loadStoryContext(db, issueId));
+        generationRunId = event.payload.expectedGenerationRunId ?? issue.generationRunId;
+        const context = await step.do("load context", async () => loadStoryContext(db, issueId, this.env));
         const book = await db.query.books.findFirst({ where: eq(books.bookIssueId, issueId) });
         if (!book) throw new Error(`Book issue ${issueId} has no book to continue`);
-        const illustrationResult = await generateIllustrationsIfNeeded(step, stepStore, db, issueId, book.id, context, illustrationGenerator, assetStore, claimedAt);
+        const illustrationResult = await generateIllustrationsIfNeeded(step, stepStore, db, issueId, book.id, context, illustrationGenerator, assetStore, claimedAt, generationRunId);
         if (illustrationResult.remaining > 0) {
-          await queueBookContinuation(step, this.env, issueId, issue.generationStartedAt, event.payload.backfillOnly === true);
+          await queueBookContinuation(step, this.env, issueId, issue.generationStartedAt, generationRunId, event.payload.backfillOnly === true);
           return;
         }
         if (event.payload.backfillOnly) {
-          await renderPdfForBook(db, issueId, issue.episodeNumber, book.id, context, assetStore, pdfRenderer, this.env.APP_BASE_URL, this.env.BETTER_AUTH_SECRET, true, claimedAt);
+          await renderPdfForBook(db, issueId, issue.episodeNumber, book.id, context, assetStore, pdfRenderer, this.env.APP_BASE_URL, this.env.BETTER_AUTH_SECRET, true, claimedAt, generationRunId);
           return;
         }
       }
@@ -157,6 +157,7 @@ export class GenerateBookWorkflow extends WorkflowEntrypoint<Env, GenerateBookPa
           },
         }));
         claimedAt = claimResult.claimedAt;
+        generationRunId = claimResult.generationRunId;
         if (!claimResult.claimed) return;
       }
       const context = await step.do("load context", async () => runGenerationStep({
@@ -168,9 +169,9 @@ export class GenerateBookWorkflow extends WorkflowEntrypoint<Env, GenerateBookPa
       }));
       const book = await step.do("generate story if needed", async () => generateStoryIfNeeded(db, issueId, context, storyGenerator, stepStore));
 
-      const illustrationResult = await generateIllustrationsIfNeeded(step, stepStore, db, issueId, book.id, context, illustrationGenerator, assetStore, claimedAt);
+      const illustrationResult = await generateIllustrationsIfNeeded(step, stepStore, db, issueId, book.id, context, illustrationGenerator, assetStore, claimedAt, generationRunId);
       if (illustrationResult.remaining > 0) {
-        await queueBookContinuation(step, this.env, issueId, claimedAt, false);
+        await queueBookContinuation(step, this.env, issueId, claimedAt, generationRunId, false);
         return;
       }
 
@@ -179,7 +180,7 @@ export class GenerateBookWorkflow extends WorkflowEntrypoint<Env, GenerateBookPa
           store: stepStore,
           bookIssueId: issueId,
           step: "RENDER_PDF",
-          run: async () => renderPdfForBook(db, issueId, issue.episodeNumber, book.id, context, assetStore, pdfRenderer, this.env.APP_BASE_URL, this.env.BETTER_AUTH_SECRET, false, claimedAt),
+          run: async () => renderPdfForBook(db, issueId, issue.episodeNumber, book.id, context, assetStore, pdfRenderer, this.env.APP_BASE_URL, this.env.BETTER_AUTH_SECRET, false, claimedAt, generationRunId),
         });
       });
 
@@ -235,7 +236,7 @@ export class GenerateBookWorkflow extends WorkflowEntrypoint<Env, GenerateBookPa
       if (error instanceof StaleGenerationError) {
         return { skipped: true, reason: "stale-generation-token" };
       }
-      await failClaimedBookIssue(db, issueId, claimedAt, error instanceof Error ? error.message : "Unknown workflow error");
+        await failClaimedBookIssue(db, issueId, claimedAt, error instanceof Error ? error.message : "Unknown workflow error", generationRunId);
       throw error;
     }
   }
@@ -339,7 +340,8 @@ async function generateIllustrationsIfNeeded(
   context: StoryContext,
   illustrationGenerator: IllustrationGenerator,
   assetStore: R2AssetStore,
-  expectedStartedAt: string | null
+  expectedStartedAt: string | null,
+  expectedGenerationRunId: string | null
 ) {
   const storyPages = await db.select().from(bookPages).where(and(eq(bookPages.bookId, bookId), eq(bookPages.pageType, "STORY"))).orderBy(asc(bookPages.pageNumber));
   const cover = await db.query.bookPages.findFirst({ where: and(eq(bookPages.bookId, bookId), eq(bookPages.pageType, "COVER")) });
@@ -352,7 +354,7 @@ async function generateIllustrationsIfNeeded(
   try {
     for (const page of pages) {
       if (!page) continue;
-      await step.do(`generate illustration page ${page.pageNumber}`, async () => generateIllustrationForPage(db, issueId, context, page.id, illustrationGenerator, assetStore, expectedStartedAt));
+      await step.do(`generate illustration page ${page.pageNumber}`, async () => generateIllustrationForPage(db, issueId, context, page.id, illustrationGenerator, assetStore, expectedStartedAt, expectedGenerationRunId));
       generated += 1;
     }
     const remaining = Math.max(0, missingPages.length - generated);
@@ -370,11 +372,11 @@ async function generateIllustrationsIfNeeded(
   }
 }
 
-async function queueBookContinuation(step: WorkflowStep, env: Env, issueId: string, expectedStartedAt: string | null, backfillOnly: boolean) {
+async function queueBookContinuation(step: WorkflowStep, env: Env, issueId: string, expectedStartedAt: string | null, expectedGenerationRunId: string | null, backfillOnly: boolean) {
   return step.do("queue next illustration batch", async () => {
     await env.GENERATE_BOOK_WORKFLOW.create({
       id: `${issueId}-continue-${crypto.randomUUID()}`,
-      params: { bookIssueId: issueId, continueBook: true, expectedStartedAt, backfillOnly },
+      params: { bookIssueId: issueId, continueBook: true, expectedStartedAt, expectedGenerationRunId, backfillOnly },
     });
     return { queued: true };
   });
@@ -391,10 +393,11 @@ async function renderPdfForBook(
   appBaseUrl: string,
   assetSigningSecret: string | undefined,
   force: boolean,
-  expectedStartedAt: string | null
+  expectedStartedAt: string | null,
+  expectedGenerationRunId: string | null
 ) {
   if (!assetSigningSecret) throw new Error("BETTER_AUTH_SECRET is required to render PDFs with private assets");
-  await assertCurrentGeneration(db, issueId, expectedStartedAt);
+  await assertCurrentGeneration(db, issueId, expectedStartedAt, expectedGenerationRunId);
   const latestBook = await db.query.books.findFirst({ where: eq(books.id, bookId) });
   if (!latestBook) throw new Error(`Book ${bookId} not found`);
   if (latestBook.pdfAssetId && !force) return { pdfAssetId: latestBook.pdfAssetId, reused: true };
@@ -406,11 +409,12 @@ async function renderPdfForBook(
     episodeNumber,
     manuscript,
     illustrations: await loadBookIllustrationRenderUrls(db, bookId, appBaseUrl, assetSigningSecret),
+    cast: await loadCastProfileRenderUrls(context, appBaseUrl, assetSigningSecret),
     collection: collection.map((summary) => ({ episodeNumber: summary.episodeNumber, title: summary.summary.split(":")[0] ?? `Episode ${summary.episodeNumber}` }))
   });
   const pdf = await pdfRenderer.render(html);
   const asset = await assetStore.put({ kind: "PDF", contentType: "application/pdf", bytes: pdf, metadata: { bookIssueId: issueId } });
-  await assertCurrentGeneration(db, issueId, expectedStartedAt);
+  await assertCurrentGeneration(db, issueId, expectedStartedAt, expectedGenerationRunId);
   await db.update(books).set({ pdfAssetId: asset.id }).where(eq(books.id, bookId));
   return { pdfAssetId: asset.id, reused: false };
 }
@@ -422,14 +426,15 @@ async function generateIllustrationForPage(
   pageId: string,
   illustrationGenerator: IllustrationGenerator,
   assetStore: R2AssetStore,
-  expectedStartedAt: string | null
+  expectedStartedAt: string | null,
+  expectedGenerationRunId: string | null
 ) {
-  await assertCurrentGeneration(db, issueId, expectedStartedAt);
+  await assertCurrentGeneration(db, issueId, expectedStartedAt, expectedGenerationRunId);
   const page = await db.query.bookPages.findFirst({ where: eq(bookPages.id, pageId) });
   if (!page) throw new Error(`Book page ${pageId} not found`);
   if (page.illustrationAssetId) return { assetId: page.illustrationAssetId, reused: true };
   const referenceImages = await buildIllustrationReferences(db, page, context, assetStore);
-  await assertCurrentGeneration(db, issueId, expectedStartedAt);
+  await assertCurrentGeneration(db, issueId, expectedStartedAt, expectedGenerationRunId);
   const image = await illustrationGenerator.generate({
     bookIssueId: issueId,
     pageNumber: page.pageNumber,
@@ -438,7 +443,7 @@ async function generateIllustrationForPage(
     referenceImages
   });
   const asset = await assetStore.put({ kind: "ILLUSTRATION", contentType: image.contentType, bytes: image.bytes, metadata: image.metadata });
-  await assertCurrentGeneration(db, issueId, expectedStartedAt);
+  await assertCurrentGeneration(db, issueId, expectedStartedAt, expectedGenerationRunId);
   const attach = await db.update(bookPages).set({ illustrationAssetId: asset.id }).where(and(eq(bookPages.id, page.id), isNull(bookPages.illustrationAssetId)));
   if (attach.meta.changes === 0) {
     const latestPage = await db.query.bookPages.findFirst({ where: eq(bookPages.id, page.id) });
@@ -561,6 +566,19 @@ async function loadBookIllustrationRenderUrls(db: Db, bookId: string, appBaseUrl
   return urls;
 }
 
+async function loadCastProfileRenderUrls(context: StoryContext, appBaseUrl: string, assetSigningSecret: string) {
+  const expiresAt = new Date(Date.now() + 15 * 60 * 1000);
+  return Promise.all(context.characters.map(async (character) => {
+    const assetId = parseJson(character.profileImagesJson, z.array(z.string()))
+      .map(assetIdFromUrl)
+      .find((id): id is string => Boolean(id));
+    return {
+      name: character.name,
+      portraitUrl: assetId ? await signInternalAssetUrl({ appBaseUrl, assetId, secret: assetSigningSecret, expiresAt }) : null,
+    };
+  }));
+}
+
 function assetIdFromUrl(value: string) {
   const match = value.match(/\/api\/assets\/([^/]+)\/download/);
   return match?.[1] ?? null;
@@ -570,10 +588,13 @@ function isSupportedReferenceContentType(contentType: string | undefined): conte
   return contentType === "image/png" || contentType === "image/jpeg" || contentType === "image/webp";
 }
 
-async function assertCurrentGeneration(db: Db, issueId: string, expectedStartedAt: string | null) {
-  if (!expectedStartedAt) return;
+async function assertCurrentGeneration(db: Db, issueId: string, expectedStartedAt: string | null, expectedGenerationRunId?: string | null) {
+  if (!expectedStartedAt && !expectedGenerationRunId) return;
   const issue = await db.query.bookIssues.findFirst({ where: eq(bookIssues.id, issueId) });
-  if (issue?.generationStartedAt !== expectedStartedAt) {
+  if (expectedStartedAt && issue?.generationStartedAt !== expectedStartedAt) {
+    throw new StaleGenerationError();
+  }
+  if (expectedGenerationRunId && issue?.generationRunId !== expectedGenerationRunId) {
     throw new StaleGenerationError();
   }
 }
@@ -674,69 +695,6 @@ async function deliverPendingEmail(
   return { sent };
 }
 
-async function loadStoryContext(db: Db, bookIssueId: string, env?: Env): Promise<StoryContext> {
-  const issue = await db.query.bookIssues.findFirst({ where: (table, { eq: equals }) => equals(table.id, bookIssueId) });
-  if (!issue) throw new Error(`Issue ${bookIssueId} not found`);
-  const child = await db.query.children.findFirst({ where: (table, { eq: equals }) => equals(table.id, issue.childId), with: { preferences: true } });
-  const universe = await db.query.universes.findFirst({ where: eq(universes.id, issue.universeId) });
-  if (!child || !universe) throw new Error("Issue context is incomplete");
-  const worldCharacters = await db.select().from(characters).where(and(eq(characters.universeId, universe.id), eq(characters.active, true)));
-  const selectedCast = parseJson(child.preferences?.selectedCharacterCastJson ?? "[]", selectedCharacterCastSchema);
-  const canon = await relevantCanon(db, child.id, universe.id);
-  const summaries = await listEpisodeSummaries(db, child.id, universe.id);
-  const examples = await db.select().from(storyExamples).where(and(eq(storyExamples.universeId, universe.id), eq(storyExamples.active, true))).limit(16);
-  const connectedChildIds = await listActiveConnectedChildren(db, child.id);
-  const storyCharacters = resolveStoryCharacters(worldCharacters, selectedCast);
-  const semanticMatches = await semanticMemoryMatches({
-    ...(env?.STORY_MEMORY_INDEX ? { index: env.STORY_MEMORY_INDEX } : {}),
-    ...(env?.OPENAI_API_KEY ? { embedder: new OpenAiEmbeddingClient(env.OPENAI_API_KEY, env.OPENAI_EMBEDDING_MODEL, Number(env.OPENAI_EMBEDDING_DIMENSIONS ?? 1536)) } : {}),
-    childId: child.id,
-    universeId: universe.id,
-    query: buildMemoryRetrievalQuery({
-      childAgeRange: child.ageRange,
-      universeName: universe.name,
-      characterNames: storyCharacters.map((character) => character.name),
-      interests: parseJson(child.preferences?.interestsJson ?? "[]", stringArraySchema),
-      recentSummaries: summaries,
-    }),
-  });
-  const memory = await retrieveStoryMemory(db, {
-    childId: child.id,
-    universeId: universe.id,
-    characterIds: storyCharacters.map((character) => character.id),
-    sourceCharacterIds: storyCharacters.map((character) => character.sourceCharacterId).filter((id): id is string => Boolean(id)),
-    semanticMatches,
-  });
-  return {
-    child,
-    universe,
-    characters: storyCharacters,
-    preferences: {
-      interests: parseJson(child.preferences?.interestsJson ?? "[]", stringArraySchema),
-      favoriteCharacterIds: parseJson(child.preferences?.favoriteCharacterIdsJson ?? "[]", stringArraySchema),
-      mainCharacterId: child.preferences?.mainCharacterId ?? null,
-      charactersLockedAt: child.preferences?.charactersLockedAt ?? null,
-      storyGenres: parseJson(child.preferences?.storyGenresJson ?? "[]", stringArraySchema),
-      optionalParentNotes: child.preferences?.optionalParentNotes ?? null
-    },
-    recentSummaries: summaries,
-    storyExamples: examples.map((example) => ({
-      title: example.title,
-      ageRange: example.ageRange,
-      genre: example.genre,
-      summary: example.summary,
-      beats: parseJson(example.storyBeatsJson, stringArraySchema),
-      styleNotes: example.styleNotes
-    })),
-    canon,
-    memory,
-    connectedWorlds: {
-      probability: connectedChildIds.length > 0 ? 0.18 : 0,
-      childIds: connectedChildIds
-    },
-  };
-}
-
 function coverPrompt(context: StoryContext, title: string): string {
   return [
     `Cover illustration for the story "${title}".`,
@@ -755,48 +713,4 @@ function characterStyleGuide(context: StoryContext): string {
 
 function collectionDisplayName(firstName: string | null): string {
   return firstName ? `${firstName}'s Little World` : "Little World";
-}
-
-function resolveStoryCharacters(
-  worldCharacters: Array<{ id: string; name: string; description: string; personality: string; visualDescriptionJson: string; profileImagesJson: string; hiddenStyleReferencesJson: string }>,
-  selectedCast: Array<{
-    characterId: string;
-    sourceCharacterId?: string | null | undefined;
-    displayName: string;
-    species?: string | null | undefined;
-    description?: string | null | undefined;
-    personality?: string | null | undefined;
-    profileImageUrls?: string[] | undefined;
-    imageStatus?: "PENDING" | "READY" | "FAILED" | undefined;
-    role: "MAIN" | "SUPPORTING";
-  }>
-): StoryContext["characters"] {
-  const lockedCharacters: StoryContext["characters"] = [];
-  for (const selected of selectedCast) {
-    const character = worldCharacters.find((candidate) => candidate.id === (selected.sourceCharacterId ?? selected.characterId));
-    if (!character) continue;
-    lockedCharacters.push({
-        id: selected.characterId,
-        name: selected.displayName || character.name,
-        sourceCharacterId: character.id,
-        baseName: character.name,
-        description: selected.description || character.description,
-        personality: selected.personality || character.personality,
-        visualDescriptionJson: character.visualDescriptionJson,
-        profileImagesJson: JSON.stringify(selected.profileImageUrls ?? parseJson(character.profileImagesJson, stringArraySchema)),
-        hiddenStyleReferencesJson: character.hiddenStyleReferencesJson,
-        role: selected.role
-    });
-  }
-
-  const source = lockedCharacters.length > 0
-    ? lockedCharacters
-    : worldCharacters.map((character, index) => ({
-        ...character,
-        sourceCharacterId: character.id,
-        baseName: character.name,
-        role: index === 0 ? "MAIN" as const : "SUPPORTING" as const
-      }));
-
-  return [...source].sort((left, right) => Number(right.role === "MAIN") - Number(left.role === "MAIN"));
 }

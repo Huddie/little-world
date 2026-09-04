@@ -164,7 +164,7 @@ export async function buildDeliveryInput(db: Db, deliveryId: string): Promise<De
   if (!parent || !child || !book?.pdfAssetId) throw new Error("Delivery is missing parent, child, or PDF");
   return {
     deliveryId,
-    parentEmail: parent.email,
+    parentEmail: subscription.deliveryEmail ?? parent.email,
     collectionName: child.firstName ? `${child.firstName}'s Little World` : "Little World",
     episodeNumber: issue.episodeNumber,
     bookIssueId: issue.id,

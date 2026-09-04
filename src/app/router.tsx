@@ -1,7 +1,7 @@
 import { createBrowserRouter, Navigate } from "react-router-dom";
 import { AdminShell } from "../components/layout/AdminShell";
 import { AppShell } from "../components/layout/AppShell";
-import { AdminBookIssueDetailPage, AdminBookIssuesPage, AdminChildrenPage, AdminDeliveriesPage, AdminFailuresPage, AdminMemoryPage, AdminSubscriptionsPage, AdminUsersPage } from "./AdminPages";
+import { AdminBookIssueDetailPage, AdminBookIssuesPage, AdminChildrenPage, AdminDeliveriesPage, AdminFailuresPage, AdminMemoryPage, AdminSubscriptionsPage, AdminUsersPage, AdminWorldPage } from "./AdminPages";
 import { AccountPage } from "./AccountPage";
 import { BookDetailPage } from "./BookDetailPage";
 import { ChildrenPage } from "./ChildrenPage";
@@ -9,11 +9,13 @@ import { DashboardPage } from "./DashboardPage";
 import { LandingPage } from "./LandingPage";
 import { OnboardingPage } from "./OnboardingPage";
 import { PricingPage } from "./PricingPage";
+import { RouteErrorPage } from "./RouteErrorPage";
 import { SignInPage } from "./SignInPage";
 
 export const router = createBrowserRouter([
   {
     element: <AppShell />,
+    errorElement: <RouteErrorPage />,
     children: [
       { path: "/", element: <LandingPage /> },
       { path: "/pricing", element: <PricingPage /> },
@@ -35,6 +37,7 @@ export const router = createBrowserRouter([
           { path: "book-issues", element: <AdminBookIssuesPage /> },
           { path: "book-issues/:id", element: <AdminBookIssueDetailPage /> },
           { path: "deliveries", element: <AdminDeliveriesPage /> },
+          { path: "world", element: <AdminWorldPage /> },
           { path: "memory", element: <AdminMemoryPage /> },
           { path: "failures", element: <AdminFailuresPage /> },
         ],

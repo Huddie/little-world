@@ -4,14 +4,17 @@ import { Hono } from "hono";
 import { z } from "zod";
 import { CharacterCastGenerator } from "../../ai/characters/cast-generator";
 import { CharacterNameSuggestionService } from "../../ai/characters/name-suggestions";
-import { getBookDetailForUser, listBooksForUser } from "../../domain/books/service";
-import { archiveChild, createChild, createChildInputSchema, listChildrenForUser, updateStoryInspiration } from "../../domain/children/service";
-import { createSubscription, listSubscriptionsForUser, updateSubscriptionDeliveryMethods, updateSubscriptionFrequency } from "../../domain/subscriptions/service";
+import { createBookIssueForSubscription, getBookDetailForUser, listBooksForUser } from "../../domain/books/service";
+import { archiveChild, createChild, createChildInputSchema, listChildrenForUser, updateChild, updateChildInputSchema, updateStoryInspiration } from "../../domain/children/service";
+import { createSubscription, listSubscriptionsForUser, updateSubscriptionDeliveryEmail, updateSubscriptionDeliveryMethods, updateSubscriptionFrequency } from "../../domain/subscriptions/service";
 import { getActiveCatalog } from "../../domain/universes/service";
+import { newId } from "../../domain/ids";
 import { parseJson, stringArraySchema } from "../../domain/json";
+import { loadStoryContextFromEnv } from "../../domain/story-context/service";
 import { inviteRelationship, inviteRelationshipInputSchema, listRelationshipsForUser, updateRelationshipStatus } from "../../domain/relationships/service";
+import { buildDeliveryInput, deliverBook, EmailDeliveryProvider } from "../../email/delivery";
 import { R2AssetStore } from "../../storage/asset-store";
-import { verifyInternalAssetSignature } from "../../storage/internal-asset-signing";
+import { verifyInternalAssetSignature, verifyPublicAssetDownloadSignature } from "../../storage/internal-asset-signing";
 import { createAuth, getPrincipalAccess, getSessionUser, requirePermission } from "../auth/auth";
 import { createDb, type Db } from "../db/client";
 import {
@@ -74,6 +77,51 @@ export function createApi() {
         "Content-Type": object.httpMetadata.contentType,
       },
     });
+  });
+
+  app.get("/api/public/assets/:id/download", async (c) => {
+    if (!c.env.BETTER_AUTH_SECRET) return c.json({ error: "Not found" }, 404);
+    const assetId = c.req.param("id");
+    const valid = await verifyPublicAssetDownloadSignature({
+      assetId,
+      expires: c.req.query("expires") ?? null,
+      signature: c.req.query("signature") ?? null,
+      secret: c.env.BETTER_AUTH_SECRET,
+    });
+    if (!valid) return c.json({ error: "Not found" }, 404);
+    const db = createDb(c.env.DB);
+    const downloadable = await db
+      .select({ asset: assets })
+      .from(assets)
+      .innerJoin(books, eq(books.pdfAssetId, assets.id))
+      .innerJoin(bookIssues, eq(bookIssues.id, books.bookIssueId))
+      .where(and(eq(assets.id, assetId), eq(assets.kind, "PDF"), eq(bookIssues.status, "DELIVERED")))
+      .get();
+    if (!downloadable) return c.json({ error: "Not found" }, 404);
+    const object = await new R2AssetStore(db, c.env.BOOK_ASSETS, c.env.APP_BASE_URL).get(assetId);
+    if (!object) return c.json({ error: "Not found" }, 404);
+    return new Response(object.body, {
+      headers: {
+        "Cache-Control": "private, max-age=604800",
+        "Content-Disposition": `inline; filename="${assetId}.pdf"`,
+        "Content-Type": object.httpMetadata?.contentType ?? "application/pdf",
+      },
+    });
+  });
+
+  app.use("/api/mcp/*", async (c, next) => {
+    const configuredSecret = c.env.MCP_SHARED_SECRET;
+    if (!configuredSecret) return c.json({ error: "MCP API is not configured" }, 404);
+    const authorization = c.req.header("authorization") ?? "";
+    if (authorization !== `Bearer ${configuredSecret}`) return c.json({ error: "Unauthorized" }, 401);
+    return next();
+  });
+
+  app.get("/api/mcp/catalog", async (c) => c.json(await getActiveCatalog(createDb(c.env.DB))));
+
+  app.get("/api/mcp/generation-context/:id", async (c) => {
+    const context = await loadStoryContextFromEnv(c.env, c.req.param("id"));
+    return c.json(context);
   });
 
   app.use("/api/*", async (c, next) => {
@@ -173,6 +221,11 @@ export function createApi() {
     return c.json(child, 201);
   });
 
+  app.patch("/api/children/:id", zValidator("json", updateChildInputSchema), async (c) => {
+    await updateChild(createDb(c.env.DB), c.get("userId"), c.req.param("id"), c.req.valid("json"));
+    return c.json({ ok: true });
+  });
+
   app.delete("/api/children/:id", async (c) => {
     const db = createDb(c.env.DB);
     await db
@@ -233,6 +286,12 @@ export function createApi() {
     async (c) => c.json(await updateSubscriptionDeliveryMethods(createDb(c.env.DB), c.get("userId"), c.req.param("id"), c.req.valid("json").deliveryMethods))
   );
 
+  app.patch(
+    "/api/subscriptions/:id/delivery-email",
+    zValidator("json", z.object({ deliveryEmail: z.string().trim().email().nullable() })),
+    async (c) => c.json(await updateSubscriptionDeliveryEmail(createDb(c.env.DB), c.get("userId"), c.req.param("id"), c.req.valid("json").deliveryEmail))
+  );
+
   app.delete("/api/subscriptions/:id", async (c) => {
     const db = createDb(c.env.DB);
     const subscription = await db.query.subscriptions.findFirst({ where: and(eq(subscriptions.id, c.req.param("id")), eq(subscriptions.userId, c.get("userId"))) });
@@ -285,6 +344,40 @@ export function createApi() {
     return c.json(toClientBookIssue(detail.issue, detail.book, detail.pages));
   });
 
+  app.post("/api/books/:id/resend-email", async (c) => {
+    const db = createDb(c.env.DB);
+    const detail = await getBookDetailForUser(db, c.get("userId"), c.req.param("id"));
+    if (detail.issue.status !== "DELIVERED" || !detail.book?.pdfAssetId) {
+      return c.json({ error: "This story is not ready to resend yet." }, 400);
+    }
+    if (!c.env.RESEND_API_KEY) return c.json({ error: "Email delivery is not configured." }, 503);
+    await db
+      .insert(deliveries)
+      .values({
+        id: newId("delivery"),
+        bookIssueId: detail.issue.id,
+        subscriptionId: detail.issue.subscriptionId,
+        method: "EMAIL",
+        provider: "resend",
+        status: "PENDING",
+      })
+      .onConflictDoUpdate({
+        target: [deliveries.bookIssueId, deliveries.subscriptionId, deliveries.method],
+        set: {
+          status: "PENDING",
+          lastError: null,
+        },
+      });
+    const delivery = await db.query.deliveries.findFirst({
+      where: and(eq(deliveries.bookIssueId, detail.issue.id), eq(deliveries.subscriptionId, detail.issue.subscriptionId), eq(deliveries.method, "EMAIL")),
+    });
+    if (!delivery) return c.json({ error: "Could not prepare email delivery." }, 500);
+    const provider = new EmailDeliveryProvider(c.env.RESEND_API_KEY, c.env.RESEND_FROM_EMAIL, new R2AssetStore(db, c.env.BOOK_ASSETS, c.env.APP_BASE_URL, c.env.BETTER_AUTH_SECRET), c.env.APP_BASE_URL);
+    const result = await deliverBook(db, provider, await buildDeliveryInput(db, delivery.id));
+    if (result.status === "FAILED") return c.json({ error: result.error ?? "Email delivery failed." }, 502);
+    return c.json({ ok: true });
+  });
+
   app.get("/api/r2/*", async (c) => {
     const key = c.req.path.replace("/api/r2/", "");
     const object = await c.env.BOOK_ASSETS.get(key);
@@ -330,6 +423,51 @@ export function createApi() {
     return c.json(await listAdminChildren(db));
   });
 
+  app.patch("/api/admin/children/:id", zValidator("json", updateChildInputSchema), async (c) => {
+    const db = createDb(c.env.DB);
+    await requirePermission(db, { id: c.get("userId"), email: c.get("userEmail") }, c.env, "content:review");
+    const input = c.req.valid("json");
+    await db
+      .update(children)
+      .set({
+        firstName: input.firstName?.trim() || null,
+        birthDate: input.birthDate ?? null,
+        ageRange: input.ageRange,
+        readingLevel: input.readingLevel ?? null,
+        updatedAt: new Date().toISOString(),
+      })
+      .where(eq(children.id, c.req.param("id")));
+    if (input.optionalParentNotes !== undefined) {
+      await db.update(childPreferences).set({ optionalParentNotes: input.optionalParentNotes, updatedAt: new Date().toISOString() }).where(eq(childPreferences.childId, c.req.param("id")));
+    }
+    return c.json({ ok: true });
+  });
+
+  app.post("/api/admin/children/:id/build-story-now", async (c) => {
+    const db = createDb(c.env.DB);
+    await requirePermission(db, { id: c.get("userId"), email: c.get("userEmail") }, c.env, "admin:retry");
+    const childId = c.req.param("id");
+    const slot = await db
+      .select({ subscription: subscriptions })
+      .from(subscriptionChildSlots)
+      .innerJoin(subscriptions, eq(subscriptions.id, subscriptionChildSlots.subscriptionId))
+      .where(and(eq(subscriptionChildSlots.childId, childId), eq(subscriptionChildSlots.status, "ACTIVE"), eq(subscriptions.status, "ACTIVE")))
+      .get();
+    const subscription = slot?.subscription ?? await db.query.subscriptions.findFirst({ where: and(eq(subscriptions.childId, childId), eq(subscriptions.status, "ACTIVE")) });
+    if (!subscription) return c.json({ error: "No active subscription for this child." }, 400);
+    const existing = await db.query.bookIssues.findFirst({
+      where: and(eq(bookIssues.subscriptionId, subscription.id), eq(bookIssues.childId, childId), inArray(bookIssues.status, ["SCHEDULED", "GENERATING", "READY", "DELIVERY_PENDING", "FAILED"])),
+      orderBy: (table, { desc: descending }) => [descending(table.createdAt)]
+    });
+    const issue = existing ?? await createBookIssueForSubscription(db, subscription.id, new Date(), childId);
+    if (issue.status === "FAILED") {
+      await resetBookIssueForRetry(db, issue.id);
+      await clearIssueWorkflowLock(db, c.env, issue.id);
+    }
+    await startIssueWorkflow(db, c.env, issue.id);
+    return c.json({ issueId: issue.id });
+  });
+
   app.get("/api/admin/subscriptions", async (c) => {
     const db = createDb(c.env.DB);
     return c.json(await listAdminSubscriptions(db));
@@ -354,6 +492,10 @@ export function createApi() {
   app.get("/api/admin/memory", async (c) => {
     const db = createDb(c.env.DB);
     return c.json(await listAdminMemory(db));
+  });
+
+  app.get("/api/admin/world", async (c) => {
+    return c.json(await getActiveCatalog(createDb(c.env.DB)));
   });
 
   app.post("/api/admin/memory/backfill", async (c) => {
@@ -430,6 +572,14 @@ export async function runScheduler(env: Env, now = new Date()) {
     const slots = await db.select().from(subscriptionChildSlots).where(and(eq(subscriptionChildSlots.subscriptionId, subscription.id), eq(subscriptionChildSlots.status, "ACTIVE")));
     const targetChildIds = slots.length > 0 ? slots.map((slot) => slot.childId) : [subscription.childId];
     for (const childId of targetChildIds) {
+      const openIssue = await db.query.bookIssues.findFirst({
+        where: and(eq(bookIssues.subscriptionId, subscription.id), eq(bookIssues.childId, childId), inArray(bookIssues.status, ["SCHEDULED", "GENERATING", "READY", "DELIVERY_PENDING", "FAILED"])),
+        orderBy: (table, { desc: descending }) => [descending(table.createdAt)]
+      });
+      if (openIssue) {
+        if (openIssue.status === "SCHEDULED" || openIssue.status === "FAILED") await startIssueWorkflow(db, env, openIssue.id);
+        continue;
+      }
       const issue = await createBookIssueForSubscription(db, subscription.id, new Date(subscription.nextIssueAt), childId);
       await startIssueWorkflow(db, env, issue.id);
     }
@@ -498,6 +648,7 @@ async function resetBookIssueForRetry(db: Db, bookIssueId: string) {
     .set({
       status: "SCHEDULED",
       generationStartedAt: null,
+      generationRunId: null,
       readyAt: null,
       deliveredAt: null,
       lastError: null,
@@ -586,6 +737,7 @@ async function getDashboard(db: Db, userId: string, userEmail: string, childId: 
       frequency: subscription.frequency,
       childSlots: subscription.childSlots,
       usedChildSlots: await countUsedChildSlots(db, subscription.id),
+      deliveryEmail: subscription.deliveryEmail,
       nextIssueAt: subscription.nextIssueAt,
       nextPaymentAt: subscription.nextIssueAt,
       lastIssueAt: subscription.lastIssueAt,
@@ -746,6 +898,7 @@ async function listAdminSubscriptions(db: Db) {
     childSlots: record.subscription.childSlots,
     usedChildSlots: slotRows.filter((slot) => slot.subscriptionId === record.subscription.id).length,
     deliveryMethods: methodRows.filter((method) => method.subscriptionId === record.subscription.id).map((method) => method.method),
+    deliveryEmail: record.subscription.deliveryEmail,
     nextIssueAt: record.subscription.nextIssueAt,
     lastIssueAt: record.subscription.lastIssueAt,
     createdAt: record.subscription.createdAt,

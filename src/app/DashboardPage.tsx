@@ -71,6 +71,7 @@ export function DashboardPage() {
   const collectionLabel = activeDashboard.child.firstName ? `${activeDashboard.child.firstName}'s story shelf` : "Story shelf";
   const selectedProfile = selectedCastMember ? resolveSelectedProfile(activeDashboard, selectedCastMember) : null;
   const buildingWorld = activeDashboard.child.worldBuildStatus === "BUILDING";
+  const latestIssueDelivered = activeDashboard.currentIssue.status === "DELIVERED";
 
   return (
     <div className="space-y-8">
@@ -128,7 +129,7 @@ export function DashboardPage() {
               </div>
             </div>
             <div className="rounded-lg bg-moss-50 p-4 dark:bg-white/8">
-              <Artwork className="aspect-square w-full rounded-md" label="Cover art is being prepared" pendingLabel="Generating cover" src={activeDashboard.currentIssue.coverUrl} />
+              <Artwork className="aspect-square w-full rounded-md" fit="cover" label="Cover art is being prepared" pendingLabel="Generating cover" src={activeDashboard.currentIssue.coverUrl} />
             </div>
           </div>
         </Card>
@@ -136,7 +137,7 @@ export function DashboardPage() {
         <Card className="p-6">
           <div className="mb-5 flex items-center justify-between gap-3">
             <div>
-              <h2 className="text-lg font-bold">{buildingWorld ? "Building world" : "Next story"}</h2>
+              <h2 className="text-lg font-bold">{buildingWorld ? "Building world" : latestIssueDelivered ? "Latest story" : "Next story"}</h2>
               <p className="text-sm text-moss-700 dark:text-slate-300">Episode {activeDashboard.currentIssue.episodeNumber}</p>
             </div>
             <StatusBadge status={buildingWorld ? "GENERATING" : activeDashboard.currentIssue.status} />
@@ -147,9 +148,15 @@ export function DashboardPage() {
               <CalendarDays size={16} />
               Scheduled {formatDate(activeDashboard.currentIssue.scheduledFor)}
             </p>
+            {latestIssueDelivered ? (
+              <p className="flex items-center gap-2">
+                <CalendarDays size={16} />
+                Next story {formatDate(activeDashboard.subscription.nextIssueAt)}
+              </p>
+            ) : null}
             <p className="flex items-center gap-2">
               <Mail size={16} />
-              Email delivery selected
+              Email delivery {activeDashboard.subscription.deliveryEmail ? `to ${activeDashboard.subscription.deliveryEmail}` : "selected"}
             </p>
           </div>
           <div className="mt-5 rounded-lg bg-moss-50 p-4 dark:bg-white/8">
@@ -159,7 +166,9 @@ export function DashboardPage() {
                 ? "The first story will start after the world is ready."
                 : activeDashboard.currentIssue.status === "FAILED"
                   ? `Please share support code ${activeDashboard.currentIssue.supportCode} if you contact support.`
-                  : "We’ll show the current status here and email you when the next book is ready."}
+                  : latestIssueDelivered
+                    ? "This episode is in the collection. The next story will start on the subscription schedule."
+                    : "We’ll show the current status here and email you when the next book is ready."}
             </p>
           </div>
         </Card>

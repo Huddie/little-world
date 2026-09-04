@@ -119,6 +119,16 @@ export async function updateSubscriptionFrequency(
   return { ok: true };
 }
 
+export async function updateSubscriptionDeliveryEmail(db: Db, userId: string, subscriptionId: string, deliveryEmail: string | null) {
+  const subscription = await db.query.subscriptions.findFirst({ where: and(eq(subscriptions.id, subscriptionId), eq(subscriptions.userId, userId)) });
+  if (!subscription) throw new Response("Subscription not found", { status: 404 });
+  await db.update(subscriptions).set({
+    deliveryEmail: deliveryEmail?.trim().toLowerCase() || null,
+    updatedAt: new Date().toISOString(),
+  }).where(eq(subscriptions.id, subscription.id));
+  return { ok: true };
+}
+
 export async function listSubscriptionsForUser(db: Db, userId: string) {
   return db.query.subscriptions.findMany({
     where: eq(subscriptions.userId, userId),

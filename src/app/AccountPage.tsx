@@ -92,6 +92,9 @@ export function AccountPage() {
           <p className="mt-3 text-sm leading-6 text-moss-700 dark:text-slate-300">
             Finished stories remain available in the private story shelf for reading and download.
           </p>
+          <p className="mt-3 text-sm font-semibold text-moss-800 dark:text-slate-200">
+            Send-to: {subscription.deliveryEmail || user.email}
+          </p>
           <div className="mt-auto pt-6">
             <Button className="w-full" onClick={() => setSubscriptionModalOpen(true)} variant="secondary">
               <Settings size={16} />
@@ -343,9 +346,14 @@ function SubscriptionModal({
   const [error, setError] = useState<Error | null>(null);
   const [selectedDeliveryMethods, setSelectedDeliveryMethods] = useState(subscription.deliveryMethods);
   const [selectedFrequency, setSelectedFrequency] = useState(subscription.frequency);
+  const [selectedDeliveryEmail, setSelectedDeliveryEmail] = useState(subscription.deliveryEmail ?? "");
   const deliveryChanged = !sameDeliveryMethods(selectedDeliveryMethods, subscription.deliveryMethods);
   const frequencyChanged = selectedFrequency !== subscription.frequency;
-  const canSave = selectedDeliveryMethods.length > 0 && (deliveryChanged || frequencyChanged);
+  const deliveryEmailChanged = normalizeOptionalEmail(selectedDeliveryEmail) !== normalizeOptionalEmail(subscription.deliveryEmail ?? "");
+  const canSave = selectedDeliveryMethods.length > 0 && (deliveryChanged || frequencyChanged || deliveryEmailChanged);
+  const canPause = subscription.status === "ACTIVE";
+  const canResume = subscription.status === "PAUSED";
+  const canCancel = subscription.status !== "CANCELLED";
 
   function run(action: string, task: () => Promise<unknown>) {
     setBusyAction(action);
@@ -364,6 +372,9 @@ function SubscriptionModal({
       }
       if (deliveryChanged) {
         tasks.push(apiClient.updateSubscriptionDeliveryMethods(subscription.id, selectedDeliveryMethods));
+      }
+      if (deliveryEmailChanged) {
+        tasks.push(apiClient.updateSubscriptionDeliveryEmail(subscription.id, normalizeOptionalEmail(selectedDeliveryEmail) || null));
       }
       await Promise.all(tasks);
     });
@@ -389,6 +400,7 @@ function SubscriptionModal({
           <p><span className="font-bold">Children:</span> {subscription.usedChildSlots} of {subscription.childSlots} slots used</p>
           <p><span className="font-bold">Next story:</span> {formatDate(subscription.nextIssueAt)}</p>
           <p><span className="font-bold">Next payment:</span> {formatDate(subscription.nextPaymentAt)}</p>
+          <p><span className="font-bold">Send-to email:</span> {subscription.deliveryEmail || "Login email"}</p>
           <p><span className="font-bold">Delivery:</span> {subscription.deliveryMethods.map((method) => method === "EMAIL" ? "Email" : "Printed book").join(", ")}</p>
         </div>
 
@@ -408,6 +420,21 @@ function SubscriptionModal({
             <option value="BIWEEKLY">Bi-weekly</option>
             <option value="MONTHLY">Monthly</option>
           </select>
+        </div>
+
+        <div className="rounded-lg border border-moon-200 p-4 dark:border-white/10">
+          <h3 className="text-sm font-black text-moss-900 dark:text-white">Send-to email</h3>
+          <p className="mt-1 text-sm leading-6 text-moss-700 dark:text-slate-300">
+            Story emails can go to a different address than the login email.
+          </p>
+          <input
+            className="mt-3 h-11 w-full rounded-lg border border-moon-200 bg-white px-3 text-sm font-semibold text-moss-900 outline-none transition focus:border-moon-400 focus:ring-4 focus:ring-moon-100 dark:border-white/10 dark:bg-slate-900 dark:text-white"
+            disabled={Boolean(busyAction)}
+            onChange={(event) => setSelectedDeliveryEmail(event.target.value)}
+            placeholder="Use login email"
+            type="email"
+            value={selectedDeliveryEmail}
+          />
         </div>
 
         <div className="rounded-lg border border-moon-200 p-4 dark:border-white/10">
@@ -447,15 +474,21 @@ function SubscriptionModal({
           <Button className="sm:col-span-2" disabled={Boolean(busyAction) || !canSave} onClick={saveChanges}>
             {busyAction === "save" ? "Saving..." : "Save changes"}
           </Button>
-          <Button disabled={Boolean(busyAction)} onClick={() => run("pause", () => apiClient.updateSubscriptionStatus(subscription.id, "PAUSED"))} variant="secondary">
-            {busyAction === "pause" ? "Pausing..." : "Pause"}
-          </Button>
-          <Button disabled={Boolean(busyAction)} onClick={() => run("resume", () => apiClient.updateSubscriptionStatus(subscription.id, "ACTIVE"))} variant="secondary">
-            {busyAction === "resume" ? "Resuming..." : "Resume"}
-          </Button>
-          <Button disabled={Boolean(busyAction)} onClick={() => run("cancel", () => apiClient.updateSubscriptionStatus(subscription.id, "CANCELLED"))} variant="danger">
-            {busyAction === "cancel" ? "Cancelling..." : "Cancel"}
-          </Button>
+          {canPause ? (
+            <Button disabled={Boolean(busyAction)} onClick={() => run("pause", () => apiClient.updateSubscriptionStatus(subscription.id, "PAUSED"))} variant="secondary">
+              {busyAction === "pause" ? "Pausing..." : "Pause subscription"}
+            </Button>
+          ) : null}
+          {canResume ? (
+            <Button disabled={Boolean(busyAction)} onClick={() => run("resume", () => apiClient.updateSubscriptionStatus(subscription.id, "ACTIVE"))} variant="secondary">
+              {busyAction === "resume" ? "Resuming..." : "Resume subscription"}
+            </Button>
+          ) : null}
+          {canCancel ? (
+            <Button disabled={Boolean(busyAction)} onClick={() => run("cancel", () => apiClient.updateSubscriptionStatus(subscription.id, "CANCELLED"))} variant="danger">
+              {busyAction === "cancel" ? "Cancelling..." : "Cancel subscription"}
+            </Button>
+          ) : null}
           <Button
             disabled={Boolean(busyAction)}
             onClick={() => {
@@ -489,4 +522,8 @@ function sameDeliveryMethods(left: string[], right: string[]) {
   const normalizedLeft = [...left].sort();
   const normalizedRight = [...right].sort();
   return normalizedLeft.every((method, index) => method === normalizedRight[index]);
+}
+
+function normalizeOptionalEmail(value: string) {
+  return value.trim().toLowerCase();
 }

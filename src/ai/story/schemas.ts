@@ -24,6 +24,7 @@ export type StoryOutline = z.infer<typeof storyOutlineSchema>;
 
 export const storyManuscriptSchema = z.object({
   title: z.string().min(1),
+  typography: z.enum(["storybook", "adventure", "cozy", "mystery", "bedtime"]).default("storybook"),
   pages: z.array(
     z.object({
       pageNumber: z.number().int().positive(),
@@ -126,9 +127,25 @@ export type StoryMemoryContext = {
   visualMemories: Array<{ id: string; characterId: string; assetId: string; caption: string; importance: number }>;
 };
 
+export type StoryLocation = {
+  id: string;
+  name: string;
+  description: string;
+  canonicalPropertiesJson: string;
+};
+
+export type StoryWorldRule = {
+  id: string;
+  category: string;
+  rule: string;
+  rationale: string | null;
+};
+
 export type StoryContext = {
   child: { id: string; firstName: string | null; birthDate: string | null; ageRange: string };
   universe: { id: string; name: string; description: string };
+  locations: StoryLocation[];
+  worldRules: StoryWorldRule[];
   characters: StoryCharacter[];
   preferences: {
     interests: string[];

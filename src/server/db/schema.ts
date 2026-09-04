@@ -126,6 +126,19 @@ export const locations = sqliteTable("locations", {
   universeSlugUnique: uniqueIndex("locations_universe_slug_unique").on(table.universeId, table.slug),
 }));
 
+export const worldRules = sqliteTable("world_rules", {
+  id: text("id").primaryKey(),
+  universeId: text("universe_id").notNull().references(() => universes.id, { onDelete: "cascade" }),
+  category: text("category").notNull(),
+  rule: text("rule").notNull(),
+  rationale: text("rationale"),
+  active: integer("active", { mode: "boolean" }).notNull().default(true),
+  createdAt: text("created_at").notNull().default(sql`CURRENT_TIMESTAMP`),
+  updatedAt: text("updated_at").notNull().default(sql`CURRENT_TIMESTAMP`),
+}, (table) => ({
+  universeCategoryIdx: index("world_rules_universe_category_idx").on(table.universeId, table.category),
+}));
+
 export const products = sqliteTable("products", {
   id: text("id").primaryKey(),
   universeId: text("universe_id").notNull().references(() => universes.id, { onDelete: "restrict" }),
@@ -190,6 +203,7 @@ export const subscriptions = sqliteTable("subscriptions", {
   status: text("status").notNull(),
   frequency: text("frequency").notNull(),
   childSlots: integer("child_slots").notNull().default(1),
+  deliveryEmail: text("delivery_email"),
   nextIssueAt: text("next_issue_at").notNull(),
   lastIssueAt: text("last_issue_at"),
   createdAt: text("created_at").notNull().default(sql`CURRENT_TIMESTAMP`),
@@ -235,14 +249,16 @@ export const bookIssues = sqliteTable("book_issues", {
   createdAt: text("created_at").notNull().default(sql`CURRENT_TIMESTAMP`),
   updatedAt: text("updated_at").notNull().default(sql`CURRENT_TIMESTAMP`),
   generationStartedAt: text("generation_started_at"),
+  generationRunId: text("generation_run_id"),
   readyAt: text("ready_at"),
   deliveredAt: text("delivered_at"),
   lastError: text("last_error"),
 }, (table) => ({
-  subscriptionEpisodeUnique: uniqueIndex("book_issues_subscription_episode_unique").on(table.subscriptionId, table.episodeNumber),
-  subscriptionScheduledUnique: uniqueIndex("book_issues_subscription_scheduled_unique").on(table.subscriptionId, table.scheduledFor),
+  subscriptionChildEpisodeUnique: uniqueIndex("book_issues_subscription_child_episode_unique").on(table.subscriptionId, table.childId, table.episodeNumber),
+  subscriptionChildScheduledUnique: uniqueIndex("book_issues_subscription_child_scheduled_unique").on(table.subscriptionId, table.childId, table.scheduledFor),
   childIdx: index("book_issues_child_idx").on(table.childId),
   statusIdx: index("book_issues_status_idx").on(table.status),
+  generationRunIdx: index("book_issues_generation_run_idx").on(table.generationRunId),
 }));
 
 export const assets = sqliteTable("assets", {

@@ -80,6 +80,44 @@ export interface Universe {
   locations: string[];
 }
 
+export interface AdminWorldCatalog {
+  universes: Array<{
+    id: string;
+    slug: string;
+    name: string;
+    description: string;
+    active: boolean;
+  }>;
+  characters: Array<{
+    id: string;
+    universeId: string;
+    slug: string;
+    name: string;
+    description: string;
+    personality: string;
+    visualDescriptionJson: string;
+    profileImagesJson: string;
+    hiddenStyleReferencesJson: string;
+    active: boolean;
+  }>;
+  locations: Array<{
+    id: string;
+    universeId: string;
+    slug: string;
+    name: string;
+    description: string;
+    canonicalPropertiesJson: string;
+  }>;
+  worldRules: Array<{
+    id: string;
+    universeId: string;
+    category: string;
+    rule: string;
+    rationale: string | null;
+    active: boolean;
+  }>;
+}
+
 export interface ProductDeliveryOption {
   method: DeliveryMethod;
   availability: DeliveryAvailability;
@@ -103,6 +141,7 @@ export interface Subscription {
   frequency: SubscriptionFrequency;
   childSlots: number;
   usedChildSlots: number;
+  deliveryEmail: string | null;
   nextIssueAt: string;
   nextPaymentAt: string | null;
   lastIssueAt: string | null;
@@ -224,6 +263,7 @@ export interface AdminSubscriptionRow {
   childSlots: number;
   usedChildSlots: number;
   deliveryMethods: DeliveryMethod[];
+  deliveryEmail: string | null;
   nextIssueAt: string;
   lastIssueAt: string | null;
   createdAt: string;

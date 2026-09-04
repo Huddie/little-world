@@ -38,7 +38,6 @@ export class BuildWorldWorkflow extends WorkflowEntrypoint<Env, BuildWorldParams
     const assetStore = new R2AssetStore(db, this.env.BOOK_ASSETS, this.env.APP_BASE_URL);
 
     try {
-      await setBookIssueStatus(db, event.payload.firstIssueId, "GENERATING");
       if (!this.env.OPENAI_API_KEY) {
         throw new Error("OPENAI_API_KEY is required to build character image sets");
       }

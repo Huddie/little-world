@@ -1,4 +1,4 @@
-import type { AdminAccess, AdminBookIssue, AdminChildRow, AdminDelivery, AdminFailures, AdminMemory, AdminSubscriptionRow, AdminUserRow, BookIssue, ChildSummary, DashboardData, Product, SelectedCharacter, UserProfile } from "../types/client";
+import type { AdminAccess, AdminBookIssue, AdminChildRow, AdminDelivery, AdminFailures, AdminMemory, AdminSubscriptionRow, AdminUserRow, AdminWorldCatalog, BookIssue, ChildSummary, DashboardData, Product, SelectedCharacter, UserProfile } from "../types/client";
 import type { ApiClient } from "./api-client";
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
@@ -102,6 +102,10 @@ export const httpApiClient: ApiClient = {
     return request<AdminMemory>("/api/admin/memory");
   },
 
+  getAdminWorldCatalog() {
+    return request<AdminWorldCatalog>("/api/admin/world");
+  },
+
   backfillAdminMemory() {
     return request<{ queued: number }>("/api/admin/memory/backfill", { method: "POST" });
   },
@@ -116,6 +120,17 @@ export const httpApiClient: ApiClient = {
 
   getAdminSubscriptions() {
     return request<AdminSubscriptionRow[]>("/api/admin/subscriptions");
+  },
+
+  updateAdminChild(id, input) {
+    return request<{ ok: true }>(`/api/admin/children/${id}`, {
+      method: "PATCH",
+      body: JSON.stringify(input),
+    });
+  },
+
+  buildAdminChildStoryNow(id) {
+    return request<{ issueId: string }>(`/api/admin/children/${id}/build-story-now`, { method: "POST" });
   },
 
   async getCharacterNameSuggestions() {
@@ -150,6 +165,13 @@ export const httpApiClient: ApiClient = {
     });
   },
 
+  updateChild(id, input) {
+    return request<{ ok: true }>(`/api/children/${id}`, {
+      method: "PATCH",
+      body: JSON.stringify(input),
+    });
+  },
+
   archiveChild(id) {
     return request<{ ok: true }>(`/api/children/${id}`, { method: "DELETE" });
   },
@@ -175,6 +197,13 @@ export const httpApiClient: ApiClient = {
     });
   },
 
+  updateSubscriptionDeliveryEmail(id, deliveryEmail) {
+    return request<{ ok: true }>(`/api/subscriptions/${id}/delivery-email`, {
+      method: "PATCH",
+      body: JSON.stringify({ deliveryEmail }),
+    });
+  },
+
   updateSubscriptionDeliveryMethods(id, deliveryMethods) {
     return request<{ ok: true }>(`/api/subscriptions/${id}/delivery`, {
       method: "PATCH",
@@ -196,6 +225,10 @@ export const httpApiClient: ApiClient = {
 
   retryBookIssueStep(issueId, stepId) {
     return request<{ ok: true }>(`/api/admin/book-issues/${issueId}/steps/${stepId}/retry`, { method: "POST" });
+  },
+
+  resendBookEmail(id) {
+    return request<{ ok: true }>(`/api/books/${id}/resend-email`, { method: "POST" });
   },
 
   inviteRelationship(input) {

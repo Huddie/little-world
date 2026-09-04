@@ -247,6 +247,7 @@ export const dashboardData: DashboardData = {
     frequency: "MONTHLY",
     childSlots: 3,
     usedChildSlots: 1,
+    deliveryEmail: "avery@example.com",
     nextIssueAt: "2026-10-03",
     nextPaymentAt: "2026-10-03",
     lastIssueAt: "2026-08-03",

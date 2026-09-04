@@ -3,7 +3,7 @@ import { z } from "zod";
 import { newId } from "../ids";
 import { stringifyJson } from "../json";
 import type { Db } from "../../server/db/client";
-import { childPreferences, children } from "../../server/db/schema";
+import { childPreferences, children, subscriptionChildSlots, subscriptions } from "../../server/db/schema";
 
 const selectedCharacterSchema = z.object({
   characterId: z.string().min(1),
@@ -56,6 +56,16 @@ export const createChildInputSchema = z.object({
 
 export type CreateChildInput = z.infer<typeof createChildInputSchema>;
 
+export const updateChildInputSchema = z.object({
+  firstName: z.string().trim().max(80).optional().nullable(),
+  birthDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional().nullable(),
+  ageRange: z.enum(["1-11 months", "12-23 months", "2-3", "4-5", "6-8", "9-12"]),
+  readingLevel: z.string().max(80).optional().nullable(),
+  optionalParentNotes: z.string().max(1000).optional().nullable()
+});
+
+export type UpdateChildInput = z.infer<typeof updateChildInputSchema>;
+
 export async function createChild(db: Db, userId: string, input: CreateChildInput) {
   const childId = newId("child");
   const lockedCharacters = input.selectedCharacters.map((character) => ({
@@ -106,6 +116,29 @@ export async function getChildForUser(db: Db, userId: string, childId: string) {
 export async function updateStoryInspiration(db: Db, userId: string, childId: string, notes: string | null) {
   await getChildForUser(db, userId, childId);
   await db.update(childPreferences).set({ optionalParentNotes: notes }).where(eq(childPreferences.childId, childId));
+  return getChildForUser(db, userId, childId);
+}
+
+export async function updateChild(db: Db, userId: string, childId: string, input: UpdateChildInput) {
+  await getChildForUser(db, userId, childId);
+  await db
+    .update(children)
+    .set({
+      firstName: input.firstName?.trim() || null,
+      birthDate: input.birthDate ?? null,
+      ageRange: input.ageRange,
+      readingLevel: input.readingLevel ?? null,
+      updatedAt: new Date().toISOString(),
+    })
+    .where(and(eq(children.id, childId), eq(children.userId, userId)));
+
+  if (input.optionalParentNotes !== undefined) {
+    await db
+      .update(childPreferences)
+      .set({ optionalParentNotes: input.optionalParentNotes, updatedAt: new Date().toISOString() })
+      .where(eq(childPreferences.childId, childId));
+  }
+
   return getChildForUser(db, userId, childId);
 }
 

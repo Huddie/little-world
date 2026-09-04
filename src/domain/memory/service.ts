@@ -204,14 +204,15 @@ export async function persistExtractedMemory(input: {
     }));
 
   for (const event of extractedEvents) {
-    const childId = event.scope === "GLOBAL" ? null : input.childId;
+    const scope = event.scope === "GLOBAL" && input.sourceBookIssueId ? "CHILD" : event.scope;
+    const childId = scope === "GLOBAL" ? null : input.childId;
     const dedupeHash = stableHash(`${event.summary}:${event.entities.map((entity) => `${entity.entityType}:${entity.entityId}`).sort().join("|")}`);
     await input.db.insert(memoryEvents).values({
       id: newId("mem"),
       universeId: input.universeId,
       childId,
       sourceBookIssueId: input.sourceBookIssueId ?? null,
-      scope: event.scope,
+      scope,
       eventType: event.eventType,
       summary: event.summary,
       importance: event.importance,
@@ -224,7 +225,7 @@ export async function persistExtractedMemory(input: {
       where: and(
         eq(memoryEvents.universeId, input.universeId),
         childId ? eq(memoryEvents.childId, childId) : isNull(memoryEvents.childId),
-        eq(memoryEvents.scope, event.scope),
+        eq(memoryEvents.scope, scope),
         eq(memoryEvents.eventType, event.eventType),
         eq(memoryEvents.dedupeHash, dedupeHash)
       ),

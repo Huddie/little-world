@@ -1,6 +1,6 @@
 import { eq } from "drizzle-orm";
 import type { Db } from "../../server/db/client";
-import { characters, locations, productDeliveryOptions, products, universes } from "../../server/db/schema";
+import { characters, locations, productDeliveryOptions, products, universes, worldRules } from "../../server/db/schema";
 
 export async function getActiveCatalog(db: Db) {
   const activeUniverses = await db.select().from(universes).where(eq(universes.active, true));
@@ -8,6 +8,7 @@ export async function getActiveCatalog(db: Db) {
   const deliveryOptions = await db.select().from(productDeliveryOptions);
   const activeCharacters = await db.select().from(characters).where(eq(characters.active, true));
   const worldLocations = await db.select().from(locations);
+  const activeWorldRules = await db.select().from(worldRules).where(eq(worldRules.active, true));
 
   return {
     universes: activeUniverses,
@@ -16,6 +17,7 @@ export async function getActiveCatalog(db: Db) {
       deliveryOptions: deliveryOptions.filter((option) => option.productId === product.id)
     })),
     characters: activeCharacters,
-    locations: worldLocations
+    locations: worldLocations,
+    worldRules: activeWorldRules
   };
 }
