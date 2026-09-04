@@ -3,7 +3,7 @@ import { z } from "zod";
 import { newId } from "../ids";
 import { stringifyJson } from "../json";
 import type { Db } from "../../server/db/client";
-import { childPreferences, children, subscriptionChildSlots, subscriptions } from "../../server/db/schema";
+import { childPreferences, children } from "../../server/db/schema";
 
 const selectedCharacterSchema = z.object({
   characterId: z.string().min(1),

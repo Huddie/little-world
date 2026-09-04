@@ -40,12 +40,13 @@ export function DashboardPage() {
   const currentIssueId = data?.currentIssue.id;
   const currentIssueStatus = data?.currentIssue.status;
   const worldBuildStatus = data?.child.worldBuildStatus;
+  const reloadDashboard = dashboard.reload;
 
   useEffect(() => {
     if (!autoRefreshNeeded) return;
-    const timer = window.setInterval(() => dashboard.reload(), 10000);
+    const timer = window.setInterval(() => reloadDashboard(), 10000);
     return () => window.clearInterval(timer);
-  }, [autoRefreshNeeded, currentIssueId, currentIssueStatus, worldBuildStatus, dashboard.reload]);
+  }, [autoRefreshNeeded, currentIssueId, currentIssueStatus, worldBuildStatus, reloadDashboard]);
 
   if (dashboard.status === "loading" && !data) {
     return <DashboardSkeleton />;

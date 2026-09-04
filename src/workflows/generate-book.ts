@@ -63,18 +63,6 @@ type ReferencePointer = {
   name: string;
 };
 
-const selectedCharacterCastSchema = z.array(z.object({
-  characterId: z.string().min(1),
-  sourceCharacterId: z.string().min(1).nullable().optional(),
-  displayName: z.string().min(1),
-  species: z.string().nullable().optional(),
-  description: z.string().nullable().optional(),
-  personality: z.string().nullable().optional(),
-  profileImageUrls: z.array(z.string()).optional(),
-  imageStatus: z.enum(["PENDING", "READY", "FAILED"]).optional(),
-  role: z.enum(["MAIN", "SUPPORTING"])
-}));
-
 export class GenerateBookWorkflow extends WorkflowEntrypoint<Env, GenerateBookParams> {
   async run(event: WorkflowEvent<GenerateBookParams>, step: WorkflowStep) {
     const db = createDb(this.env.DB);

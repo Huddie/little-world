@@ -1,4 +1,4 @@
-import { Archive, Baby, Edit3, Plus, Sparkles, X } from "lucide-react";
+import { Archive, Baby, Edit3, Plus, ScrollText, Sparkles, X } from "lucide-react";
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { Button } from "../components/ui/Button";
@@ -12,7 +12,7 @@ import { ageRangeFromBirthDate } from "../lib/age-range";
 import { apiClient } from "../lib/api-client";
 import { formatDate } from "../lib/format";
 import { useAsyncResource } from "../lib/use-async-resource";
-import type { ChildInspirationSettings, ChildSummary, StoryInspirationCatalog } from "../types/client";
+import type { ChildSummary, StoryInspirationCatalog } from "../types/client";
 
 export function ChildrenPage() {
   const children = useAsyncResource(() => apiClient.getChildren(), []);
@@ -56,6 +56,7 @@ export function ChildrenPage() {
 
 function ChildCard({ child, index, onChanged }: { child: ChildSummary; index: number; onChanged: () => void }) {
   const label = child.firstName?.trim() || `Kid ${index + 1}`;
+  const torahPortionEnabled = child.inspirationSettings?.enabledSourceIds.includes("inspiration_source_sefaria_weekly_torah") ?? false;
   const [editOpen, setEditOpen] = useState(false);
 
   return (
@@ -72,7 +73,18 @@ function ChildCard({ child, index, onChanged }: { child: ChildSummary; index: nu
             </p>
           </div>
         </div>
-        <StatusBadge status={child.worldBuildStatus === "READY" ? "READY" : "GENERATING"} />
+        <div className="flex shrink-0 items-center gap-2">
+          {torahPortionEnabled ? (
+            <span
+              aria-label="Weekly Torah portion enabled"
+              className="grid h-9 w-9 place-items-center rounded-full border border-moon-200 bg-moon-50 text-moss-700 dark:border-white/10 dark:bg-white/8 dark:text-moon-200"
+              title="Weekly Torah portion enabled"
+            >
+              <ScrollText size={17} />
+            </span>
+          ) : null}
+          <StatusBadge status={child.worldBuildStatus === "READY" ? "READY" : "GENERATING"} />
+        </div>
       </div>
 
       <div className="mt-5 flex flex-wrap gap-3">
@@ -135,9 +147,9 @@ function EditChildModal({ child, label, onChanged, onClose }: { child: ChildSumm
   }, [inspirationResource.status, inspirationResource.data]);
 
   return (
-    <div aria-modal="true" className="fixed inset-0 z-50 grid place-items-center bg-moss-900/40 p-4" onMouseDown={onClose} role="dialog">
-      <div className="flex max-h-[calc(100vh-2rem)] w-full max-w-lg flex-col overflow-hidden rounded-2xl bg-white shadow-2xl dark:bg-slate-950" onMouseDown={(event) => event.stopPropagation()}>
-        <div className="flex items-start justify-between gap-4 border-b border-moon-100 p-5 dark:border-white/10">
+    <div aria-modal="true" className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-moss-900/40 p-3 sm:p-4" onMouseDown={onClose} role="dialog">
+      <div className="my-3 flex max-h-[calc(100dvh-1.5rem)] w-full max-w-lg flex-col overflow-hidden rounded-2xl bg-white shadow-2xl sm:my-4 sm:max-h-[calc(100dvh-2rem)] dark:bg-slate-950" onMouseDown={(event) => event.stopPropagation()}>
+        <div className="flex shrink-0 items-start justify-between gap-4 border-b border-moon-100 p-4 sm:p-5 dark:border-white/10">
           <div>
             <h2 className="text-xl font-black text-moss-900 dark:text-white">Edit {label}</h2>
             <p className="mt-1 text-sm text-moss-700 dark:text-slate-300">Update the profile details used for future stories.</p>
@@ -147,7 +159,7 @@ function EditChildModal({ child, label, onChanged, onClose }: { child: ChildSumm
           </button>
         </div>
 
-        <div className="min-h-0 flex-1 overflow-y-auto p-5">
+        <div className="min-h-0 flex-1 overflow-y-auto p-4 sm:p-5">
         <div className="grid gap-4">
           <Field hint="Optional. If left blank, we’ll use Kid N in account screens." label="Child name">
             <TextInput onChange={(event) => setFirstName(event.target.value)} placeholder="Optional" value={firstName} />
@@ -196,7 +208,7 @@ function EditChildModal({ child, label, onChanged, onClose }: { child: ChildSumm
 
         {error ? <p className="mt-4 text-sm font-semibold text-petal-500">{error.message}</p> : null}
         </div>
-        <div className="flex justify-end gap-2 border-t border-moon-100 p-5 dark:border-white/10">
+        <div className="flex shrink-0 justify-end gap-2 border-t border-moon-100 p-4 sm:p-5 dark:border-white/10">
           <Button onClick={onClose} type="button" variant="ghost">Cancel</Button>
           <Button
             disabled={busy}

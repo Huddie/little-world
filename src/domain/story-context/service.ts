@@ -4,7 +4,7 @@ import { z as zod } from "zod";
 import type { StoryContext } from "../../ai/story/schemas";
 import type { Env } from "../../server/env";
 import { createDb, type Db } from "../../server/db/client";
-import { bookIssues, characters, locations, storyExamples, universes, worldRules } from "../../server/db/schema";
+import { characters, locations, storyExamples, universes, worldRules } from "../../server/db/schema";
 import { listEpisodeSummaries } from "../books/service";
 import { relevantCanon } from "../canon/service";
 import { parseJson, stringArraySchema } from "../json";

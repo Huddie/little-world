@@ -7,7 +7,6 @@ import type { Db } from "../../server/db/client";
 import {
   bookInspirations,
   bookIssues,
-  children,
   childPreferences,
   inspirationItems,
   inspirationMappings,
