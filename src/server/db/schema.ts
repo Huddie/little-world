@@ -411,6 +411,113 @@ export const sharedCanonEventSources = sqliteTable("shared_canon_event_sources",
   sourceUnique: uniqueIndex("shared_canon_event_sources_unique").on(table.sharedCanonEventId, table.bookIssueId),
 }));
 
+export const memoryEvents = sqliteTable("memory_events", {
+  id: text("id").primaryKey(),
+  universeId: text("universe_id").notNull().references(() => universes.id, { onDelete: "cascade" }),
+  childId: text("child_id").references(() => children.id, { onDelete: "cascade" }),
+  sourceBookIssueId: text("source_book_issue_id").references(() => bookIssues.id, { onDelete: "set null" }),
+  scope: text("scope").notNull(),
+  eventType: text("event_type").notNull(),
+  summary: text("summary").notNull(),
+  importance: integer("importance").notNull(),
+  confidence: integer("confidence").notNull().default(3),
+  storyTime: text("story_time"),
+  dedupeHash: text("dedupe_hash").notNull(),
+  createdAt: text("created_at").notNull().default(sql`CURRENT_TIMESTAMP`),
+  updatedAt: text("updated_at").notNull().default(sql`CURRENT_TIMESTAMP`),
+}, (table) => ({
+  dedupeUnique: uniqueIndex("memory_events_dedupe_unique").on(table.universeId, table.childId, table.scope, table.eventType, table.dedupeHash),
+  retrievalIdx: index("memory_events_retrieval_idx").on(table.universeId, table.childId, table.importance, table.createdAt),
+  sourceIssueIdx: index("memory_events_source_issue_idx").on(table.sourceBookIssueId),
+}));
+
+export const memoryEventEntities = sqliteTable("memory_event_entities", {
+  id: text("id").primaryKey(),
+  memoryEventId: text("memory_event_id").notNull().references(() => memoryEvents.id, { onDelete: "cascade" }),
+  entityType: text("entity_type").notNull(),
+  entityId: text("entity_id").notNull(),
+  createdAt: text("created_at").notNull().default(sql`CURRENT_TIMESTAMP`),
+}, (table) => ({
+  eventEntityUnique: uniqueIndex("memory_event_entities_event_entity_unique").on(table.memoryEventId, table.entityType, table.entityId),
+  entityIdx: index("memory_event_entities_entity_idx").on(table.entityType, table.entityId),
+}));
+
+export const characterRelationshipMemories = sqliteTable("character_relationship_memories", {
+  id: text("id").primaryKey(),
+  universeId: text("universe_id").notNull().references(() => universes.id, { onDelete: "cascade" }),
+  childId: text("child_id").notNull().references(() => children.id, { onDelete: "cascade" }),
+  characterAId: text("character_a_id").notNull(),
+  characterBId: text("character_b_id").notNull(),
+  sourceBookIssueId: text("source_book_issue_id").references(() => bookIssues.id, { onDelete: "set null" }),
+  relationshipType: text("relationship_type").notNull(),
+  summary: text("summary").notNull(),
+  firstMetAtStoryTime: text("first_met_at_story_time"),
+  importance: integer("importance").notNull(),
+  dedupeHash: text("dedupe_hash").notNull(),
+  createdAt: text("created_at").notNull().default(sql`CURRENT_TIMESTAMP`),
+  updatedAt: text("updated_at").notNull().default(sql`CURRENT_TIMESTAMP`),
+}, (table) => ({
+  pairIdx: index("character_relationship_memories_pair_idx").on(table.childId, table.characterAId, table.characterBId),
+  dedupeUnique: uniqueIndex("character_relationship_memories_dedupe_unique").on(table.childId, table.characterAId, table.characterBId, table.relationshipType, table.dedupeHash),
+  sourceIssueIdx: index("character_relationship_memories_source_issue_idx").on(table.sourceBookIssueId),
+}));
+
+export const characterProfileMemories = sqliteTable("character_profile_memories", {
+  id: text("id").primaryKey(),
+  universeId: text("universe_id").notNull().references(() => universes.id, { onDelete: "cascade" }),
+  childId: text("child_id").notNull().references(() => children.id, { onDelete: "cascade" }),
+  characterId: text("character_id").notNull(),
+  sourceBookIssueId: text("source_book_issue_id").references(() => bookIssues.id, { onDelete: "set null" }),
+  memoryType: text("memory_type").notNull(),
+  summary: text("summary").notNull(),
+  importance: integer("importance").notNull(),
+  dedupeHash: text("dedupe_hash").notNull(),
+  createdAt: text("created_at").notNull().default(sql`CURRENT_TIMESTAMP`),
+  updatedAt: text("updated_at").notNull().default(sql`CURRENT_TIMESTAMP`),
+}, (table) => ({
+  characterIdx: index("character_profile_memories_character_idx").on(table.childId, table.characterId, table.importance),
+  dedupeUnique: uniqueIndex("character_profile_memories_dedupe_unique").on(table.childId, table.characterId, table.memoryType, table.dedupeHash),
+  sourceIssueIdx: index("character_profile_memories_source_issue_idx").on(table.sourceBookIssueId),
+}));
+
+export const characterImageMemories = sqliteTable("character_image_memories", {
+  id: text("id").primaryKey(),
+  universeId: text("universe_id").notNull().references(() => universes.id, { onDelete: "cascade" }),
+  childId: text("child_id").notNull().references(() => children.id, { onDelete: "cascade" }),
+  characterId: text("character_id").notNull(),
+  assetId: text("asset_id").notNull().references(() => assets.id, { onDelete: "cascade" }),
+  sourceBookIssueId: text("source_book_issue_id").references(() => bookIssues.id, { onDelete: "set null" }),
+  pageNumber: integer("page_number").notNull(),
+  memoryEventId: text("memory_event_id").references(() => memoryEvents.id, { onDelete: "set null" }),
+  caption: text("caption").notNull(),
+  importance: integer("importance").notNull(),
+  active: integer("active", { mode: "boolean" }).notNull().default(true),
+  usageCount: integer("usage_count").notNull().default(0),
+  createdAt: text("created_at").notNull().default(sql`CURRENT_TIMESTAMP`),
+}, (table) => ({
+  characterIdx: index("character_image_memories_character_idx").on(table.childId, table.characterId, table.importance),
+  sourceUnique: uniqueIndex("character_image_memories_source_unique").on(table.characterId, table.assetId),
+  sourceIssueIdx: index("character_image_memories_source_issue_idx").on(table.sourceBookIssueId),
+}));
+
+export const memoryEmbeddings = sqliteTable("memory_embeddings", {
+  id: text("id").primaryKey(),
+  recordType: text("record_type").notNull(),
+  recordId: text("record_id").notNull(),
+  vectorId: text("vector_id").notNull(),
+  model: text("model").notNull(),
+  dimensions: integer("dimensions").notNull(),
+  contentHash: text("content_hash").notNull(),
+  status: text("status").notNull(),
+  lastError: text("last_error"),
+  createdAt: text("created_at").notNull().default(sql`CURRENT_TIMESTAMP`),
+  updatedAt: text("updated_at").notNull().default(sql`CURRENT_TIMESTAMP`),
+}, (table) => ({
+  recordUnique: uniqueIndex("memory_embeddings_record_unique").on(table.recordType, table.recordId),
+  vectorUnique: uniqueIndex("memory_embeddings_vector_unique").on(table.vectorId),
+  statusIdx: index("memory_embeddings_status_idx").on(table.status),
+}));
+
 export const usersRelations = relations(users, ({ many }) => ({
   children: many(children),
   subscriptions: many(subscriptions),

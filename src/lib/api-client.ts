@@ -1,7 +1,7 @@
 import { adminIssues, dashboardData, moonlightMonthly } from "./mock-data";
 import { cuteCharacterNameExamples } from "./character-name-suggestions";
 import { httpApiClient } from "./http-api-client";
-import type { AdminAccess, AdminBookIssue, AdminChildRow, AdminDelivery, AdminFailures, AdminSubscriptionRow, AdminUserRow, AgeRange, BookIssue, ChildSummary, DashboardData, Product, SelectedCharacter, UserProfile } from "../types/client";
+import type { AdminAccess, AdminBookIssue, AdminChildRow, AdminDelivery, AdminFailures, AdminMemory, AdminSubscriptionRow, AdminUserRow, AgeRange, BookIssue, ChildSummary, DashboardData, Product, SelectedCharacter, UserProfile } from "../types/client";
 
 const delay = async (): Promise<void> => {
   await new Promise((resolve) => window.setTimeout(resolve, 120));
@@ -19,6 +19,8 @@ export interface ApiClient {
   getAdminAccess(): Promise<AdminAccess>;
   getAdminDeliveries(): Promise<AdminDelivery[]>;
   getAdminFailures(): Promise<AdminFailures>;
+  getAdminMemory(): Promise<AdminMemory>;
+  backfillAdminMemory(): Promise<{ queued: number }>;
   getAdminUsers(): Promise<AdminUserRow[]>;
   getAdminChildren(): Promise<AdminChildRow[]>;
   getAdminSubscriptions(): Promise<AdminSubscriptionRow[]>;
@@ -139,6 +141,16 @@ const mockApiClient: ApiClient = {
   async getAdminFailures() {
     await delay();
     return { failedIssues: [], failedDeliveries: [] };
+  },
+
+  async getAdminMemory() {
+    await delay();
+    return { events: [], characterProfiles: [], relationships: [], imageMemories: [] };
+  },
+
+  async backfillAdminMemory() {
+    await delay();
+    return { queued: 0 };
   },
 
   async getAdminUsers() {

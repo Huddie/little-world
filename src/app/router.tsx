@@ -1,7 +1,7 @@
 import { createBrowserRouter, Navigate } from "react-router-dom";
 import { AdminShell } from "../components/layout/AdminShell";
 import { AppShell } from "../components/layout/AppShell";
-import { AdminBookIssueDetailPage, AdminBookIssuesPage, AdminChildrenPage, AdminDeliveriesPage, AdminFailuresPage, AdminSubscriptionsPage, AdminUsersPage } from "./AdminPages";
+import { AdminBookIssueDetailPage, AdminBookIssuesPage, AdminChildrenPage, AdminDeliveriesPage, AdminFailuresPage, AdminMemoryPage, AdminSubscriptionsPage, AdminUsersPage } from "./AdminPages";
 import { AccountPage } from "./AccountPage";
 import { BookDetailPage } from "./BookDetailPage";
 import { ChildrenPage } from "./ChildrenPage";
@@ -35,6 +35,7 @@ export const router = createBrowserRouter([
           { path: "book-issues", element: <AdminBookIssuesPage /> },
           { path: "book-issues/:id", element: <AdminBookIssueDetailPage /> },
           { path: "deliveries", element: <AdminDeliveriesPage /> },
+          { path: "memory", element: <AdminMemoryPage /> },
           { path: "failures", element: <AdminFailuresPage /> },
         ],
       },

@@ -11,6 +11,7 @@ import { getActiveCatalog } from "../../domain/universes/service";
 import { parseJson, stringArraySchema } from "../../domain/json";
 import { inviteRelationship, inviteRelationshipInputSchema, listRelationshipsForUser, updateRelationshipStatus } from "../../domain/relationships/service";
 import { R2AssetStore } from "../../storage/asset-store";
+import { verifyInternalAssetSignature } from "../../storage/internal-asset-signing";
 import { createAuth, getPrincipalAccess, getSessionUser, requirePermission } from "../auth/auth";
 import { createDb, type Db } from "../db/client";
 import {
@@ -25,6 +26,12 @@ import {
   deliveries,
   episodeSummaries,
   generationSteps,
+  characterImageMemories,
+  characterProfileMemories,
+  characterRelationshipMemories,
+  memoryEmbeddings,
+  memoryEventEntities,
+  memoryEvents,
   productDeliveryOptions,
   products,
   qaResults,
@@ -48,6 +55,26 @@ export function createApi() {
   const app = new Hono<{ Bindings: Env; Variables: Variables }>();
 
   app.on(["GET", "POST"], "/api/auth/*", (c) => createAuth(c.env).handler(c.req.raw));
+
+  app.get("/api/internal/assets/:id/render", async (c) => {
+    if (!c.env.BETTER_AUTH_SECRET) return c.json({ error: "Not found" }, 404);
+    const assetId = c.req.param("id");
+    const valid = await verifyInternalAssetSignature({
+      assetId,
+      expires: c.req.query("expires") ?? null,
+      signature: c.req.query("signature") ?? null,
+      secret: c.env.BETTER_AUTH_SECRET,
+    });
+    if (!valid) return c.json({ error: "Not found" }, 404);
+    const object = await new R2AssetStore(createDb(c.env.DB), c.env.BOOK_ASSETS, c.env.APP_BASE_URL).get(assetId);
+    if (!object || !object.httpMetadata?.contentType?.startsWith("image/")) return c.json({ error: "Not found" }, 404);
+    return new Response(object.body, {
+      headers: {
+        "Cache-Control": "private, max-age=900",
+        "Content-Type": object.httpMetadata.contentType,
+      },
+    });
+  });
 
   app.use("/api/*", async (c, next) => {
     if (c.req.path.startsWith("/api/auth/")) return next();
@@ -246,10 +273,7 @@ export function createApi() {
     async (c) => {
       const db = createDb(c.env.DB);
       const result = await createSubscription(db, c.get("userId"), c.req.valid("json"));
-      await c.env.BUILD_WORLD_WORKFLOW.create({
-        id: `${result.firstIssue.id}-world-${crypto.randomUUID()}`,
-        params: { childId: result.firstIssue.childId, firstIssueId: result.firstIssue.id },
-      });
+      await startIssueWorkflow(db, c.env, result.firstIssue.id);
       return c.json(result, 201);
     }
   );
@@ -327,11 +351,40 @@ export function createApi() {
     return c.json(await db.select().from(deliveries).orderBy(desc(deliveries.createdAt)).limit(100));
   });
 
+  app.get("/api/admin/memory", async (c) => {
+    const db = createDb(c.env.DB);
+    return c.json(await listAdminMemory(db));
+  });
+
+  app.post("/api/admin/memory/backfill", async (c) => {
+    const db = createDb(c.env.DB);
+    await requirePermission(db, { id: c.get("userId"), email: c.get("userEmail") }, c.env, "admin:retry");
+    const rows = await db
+      .select({ issue: bookIssues, book: books })
+      .from(books)
+      .innerJoin(bookIssues, eq(bookIssues.id, books.bookIssueId))
+      .orderBy(desc(bookIssues.createdAt))
+      .limit(100);
+    let queued = 0;
+    for (const row of rows) {
+      const existing = await db.query.memoryEvents.findFirst({ where: eq(memoryEvents.sourceBookIssueId, row.issue.id) });
+      if (existing) continue;
+      await c.env.GENERATE_BOOK_WORKFLOW.create({
+        id: `${row.issue.id}-memory-backfill-${crypto.randomUUID()}`,
+        params: { bookIssueId: row.issue.id, memoryBackfillOnly: true },
+      });
+      queued += 1;
+      if (queued >= 25) break;
+    }
+    return c.json({ queued });
+  });
+
   app.post("/api/admin/book-issues/:id/retry", async (c) => {
     const db = createDb(c.env.DB);
     await requirePermission(db, { id: c.get("userId"), email: c.get("userEmail") }, c.env, "admin:retry");
     const issueId = c.req.param("id");
     await resetBookIssueForRetry(db, issueId);
+    await clearIssueWorkflowLock(db, c.env, issueId);
     await startIssueWorkflow(db, c.env, issueId);
     return c.json({ ok: true });
   });
@@ -341,6 +394,7 @@ export function createApi() {
     await requirePermission(db, { id: c.get("userId"), email: c.get("userEmail") }, c.env, "admin:retry");
     const issueId = c.req.param("id");
     await resetBookIssueForRetry(db, issueId);
+    await clearIssueWorkflowLock(db, c.env, issueId);
     await startIssueWorkflow(db, c.env, issueId);
     return c.json({ ok: true });
   });
@@ -385,6 +439,16 @@ export async function runScheduler(env: Env, now = new Date()) {
 async function startIssueWorkflow(db: Db, env: Env, bookIssueId: string) {
   const issue = await db.query.bookIssues.findFirst({ where: eq(bookIssues.id, bookIssueId) });
   if (!issue) throw new Error(`Book issue ${bookIssueId} not found`);
+  if (env.MEMBER_WORLD) {
+    const objectId = env.MEMBER_WORLD.idFromName(issue.childId);
+    const object = env.MEMBER_WORLD.get(objectId);
+    const response = await object.fetch("https://member-world/start-issue", {
+      method: "POST",
+      body: JSON.stringify({ action: "START_ISSUE", bookIssueId }),
+    });
+    if (!response.ok) throw new Error(`Member world coordination failed: ${response.status}`);
+    return;
+  }
   const preferences = await db.query.childPreferences.findFirst({ where: eq(childPreferences.childId, issue.childId) });
   if (!isWorldReady(preferences?.selectedCharacterCastJson)) {
     await env.BUILD_WORLD_WORKFLOW.create({
@@ -409,9 +473,20 @@ const storyRetrySteps: GenerationStepName[] = [
   "PERSIST_CANON",
   "SEND_DELIVERIES",
   "ADVANCE_SUBSCRIPTION",
+  "EMBED_MEMORY",
+  "PROMOTE_IMAGE_MEMORIES",
 ];
 
 async function resetBookIssueForRetry(db: Db, bookIssueId: string) {
+  const sourcedMemoryEvents = await db.select().from(memoryEvents).where(eq(memoryEvents.sourceBookIssueId, bookIssueId));
+  const sourcedMemoryEventIds = sourcedMemoryEvents.map((event) => event.id);
+  if (sourcedMemoryEventIds.length > 0) {
+    await db.delete(memoryEmbeddings).where(and(eq(memoryEmbeddings.recordType, "memory_event"), inArray(memoryEmbeddings.recordId, sourcedMemoryEventIds)));
+  }
+  await db.delete(characterImageMemories).where(eq(characterImageMemories.sourceBookIssueId, bookIssueId));
+  await db.delete(characterProfileMemories).where(eq(characterProfileMemories.sourceBookIssueId, bookIssueId));
+  await db.delete(characterRelationshipMemories).where(eq(characterRelationshipMemories.sourceBookIssueId, bookIssueId));
+  await db.delete(memoryEvents).where(eq(memoryEvents.sourceBookIssueId, bookIssueId));
   await db.delete(deliveries).where(eq(deliveries.bookIssueId, bookIssueId));
   await db.delete(qaResults).where(eq(qaResults.bookIssueId, bookIssueId));
   await db.delete(episodeSummaries).where(eq(episodeSummaries.bookIssueId, bookIssueId));
@@ -429,6 +504,17 @@ async function resetBookIssueForRetry(db: Db, bookIssueId: string) {
       updatedAt: new Date().toISOString(),
     })
     .where(eq(bookIssues.id, bookIssueId));
+}
+
+async function clearIssueWorkflowLock(db: Db, env: Env, bookIssueId: string) {
+  if (!env.MEMBER_WORLD) return;
+  const issue = await db.query.bookIssues.findFirst({ where: eq(bookIssues.id, bookIssueId) });
+  if (!issue) return;
+  const object = env.MEMBER_WORLD.get(env.MEMBER_WORLD.idFromName(issue.childId));
+  await object.fetch("https://member-world/clear-issue-lock", {
+    method: "POST",
+    body: JSON.stringify({ action: "CLEAR_ISSUE_LOCK", bookIssueId }),
+  });
 }
 
 async function startWorkflow(env: Env, bookIssueId: string) {
@@ -664,6 +750,39 @@ async function listAdminSubscriptions(db: Db) {
     lastIssueAt: record.subscription.lastIssueAt,
     createdAt: record.subscription.createdAt,
   }));
+}
+
+async function listAdminMemory(db: Db) {
+  const events = await db.select().from(memoryEvents).orderBy(desc(memoryEvents.createdAt)).limit(100);
+  const eventIds = events.map((event) => event.id);
+  const entities = eventIds.length > 0 ? await db.select().from(memoryEventEntities).where(inArray(memoryEventEntities.memoryEventId, eventIds)) : [];
+  const embeddings = eventIds.length > 0 ? await db.select().from(memoryEmbeddings).where(and(eq(memoryEmbeddings.recordType, "memory_event"), inArray(memoryEmbeddings.recordId, eventIds))) : [];
+  const imageRows = await db.select().from(characterImageMemories).orderBy(desc(characterImageMemories.createdAt)).limit(50);
+  const profileRows = await db.select().from(characterProfileMemories).orderBy(desc(characterProfileMemories.createdAt)).limit(50);
+  const relationshipRows = await db.select().from(characterRelationshipMemories).orderBy(desc(characterRelationshipMemories.createdAt)).limit(50);
+
+  return {
+    events: events.map((event) => ({
+      id: event.id,
+      childId: event.childId,
+      universeId: event.universeId,
+      sourceBookIssueId: event.sourceBookIssueId,
+      scope: event.scope,
+      eventType: event.eventType,
+      summary: event.summary,
+      importance: event.importance,
+      confidence: event.confidence,
+      storyTime: event.storyTime,
+      createdAt: event.createdAt,
+      entities: entities
+        .filter((entity) => entity.memoryEventId === event.id)
+        .map((entity) => ({ entityType: entity.entityType, entityId: entity.entityId })),
+      embeddingStatus: embeddings.find((embedding) => embedding.recordId === event.id)?.status ?? "PENDING",
+    })),
+    characterProfiles: profileRows,
+    relationships: relationshipRows,
+    imageMemories: imageRows,
+  };
 }
 
 async function listAdminIssues(db: Db) {

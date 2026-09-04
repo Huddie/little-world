@@ -229,6 +229,58 @@ export interface AdminSubscriptionRow {
   createdAt: string;
 }
 
+export interface AdminMemory {
+  events: Array<{
+    id: string;
+    childId: string | null;
+    universeId: string;
+    sourceBookIssueId: string | null;
+    scope: string;
+    eventType: string;
+    summary: string;
+    importance: number;
+    confidence: number;
+    storyTime: string | null;
+    createdAt: string;
+    entities: Array<{ entityType: string; entityId: string }>;
+    embeddingStatus: string;
+  }>;
+  characterProfiles: Array<{
+    id: string;
+    childId: string;
+    characterId: string;
+    sourceBookIssueId: string | null;
+    memoryType: string;
+    summary: string;
+    importance: number;
+    createdAt: string;
+  }>;
+  relationships: Array<{
+    id: string;
+    childId: string;
+    characterAId: string;
+    characterBId: string;
+    sourceBookIssueId: string | null;
+    relationshipType: string;
+    summary: string;
+    importance: number;
+    createdAt: string;
+  }>;
+  imageMemories: Array<{
+    id: string;
+    childId: string;
+    characterId: string;
+    assetId: string;
+    sourceBookIssueId: string | null;
+    pageNumber: number;
+    caption: string;
+    importance: number;
+    active: boolean;
+    usageCount: number;
+    createdAt: string;
+  }>;
+}
+
 export interface DashboardData {
   user: UserProfile;
   children: ChildSummary[];

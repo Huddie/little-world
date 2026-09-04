@@ -20,6 +20,8 @@ export type GenerationStepName =
   | "CREATE_DELIVERIES"
   | "SEND_DELIVERIES"
   | "PERSIST_CANON"
+  | "EMBED_MEMORY"
+  | "PROMOTE_IMAGE_MEMORIES"
   | "ADVANCE_SUBSCRIPTION";
 
 export type GenerationStepStatus = "PENDING" | "RUNNING" | "COMPLETED" | "FAILED";
@@ -80,6 +82,8 @@ export const generationStepLabels: Record<GenerationStepName, string> = {
   CREATE_DELIVERIES: "Create deliveries",
   SEND_DELIVERIES: "Send deliveries",
   PERSIST_CANON: "Persist story memory",
+  EMBED_MEMORY: "Index story memory",
+  PROMOTE_IMAGE_MEMORIES: "Promote image memories",
   ADVANCE_SUBSCRIPTION: "Advance subscription",
 };
 

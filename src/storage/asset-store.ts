@@ -28,6 +28,10 @@ export class R2AssetStore implements AssetStore {
     const id = newId("asset");
     const r2Key = `assets/${id}`;
     await this.bucket.put(r2Key, input.bytes, { httpMetadata: { contentType: input.contentType } });
+    const stored = await this.bucket.head(r2Key);
+    if (!stored) {
+      throw new Error(`R2 upload verification failed for ${r2Key}`);
+    }
     await this.db.insert(assets).values({
       id,
       kind: input.kind,

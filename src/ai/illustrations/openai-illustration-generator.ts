@@ -14,7 +14,7 @@ export class OpenAiIllustrationGenerator implements IllustrationGenerator {
     const prompt = [
       input.styleGuide,
       input.referenceImages?.length
-        ? "Use the attached character reference images for identity, proportions, colors, clothing/accessories, and illustration style. Generate a new scene; do not copy the reference poses or backgrounds."
+        ? "Use the attached character reference images as the canonical cast. Match their species, silhouettes, proportions, colors, clothing/accessories, and illustration style. Do not substitute other animals or invent replacement cast members. Generate a new scene; do not copy the reference poses or backgrounds."
         : null,
       input.prompt,
     ].filter(Boolean).join("\n\n");
@@ -23,7 +23,6 @@ export class OpenAiIllustrationGenerator implements IllustrationGenerator {
           model: this.model,
           image: await Promise.all(input.referenceImages.map((reference, index) => toFile(reference.bytes, reference.name || `reference-${index + 1}.png`, { type: reference.contentType }))),
           prompt,
-          input_fidelity: "high",
           quality: "medium",
           size: "1024x1024"
         })

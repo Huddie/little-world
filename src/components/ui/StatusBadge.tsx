@@ -28,7 +28,7 @@ export function StatusBadge({ status }: { status: Status }) {
   const label = status.replaceAll("_", " ").toLowerCase();
 
   return (
-    <span className={`inline-flex rounded-full px-2.5 py-1 text-xs font-semibold capitalize ${toneByStatus[status]}`}>
+    <span className={`inline-flex min-h-7 items-center justify-center whitespace-nowrap rounded-full px-3 text-xs font-semibold capitalize leading-none ${toneByStatus[status]}`}>
       {label}
     </span>
   );

@@ -136,11 +136,16 @@ export async function findDueSubscriptions(db: Db, now = new Date()) {
 export async function advanceSubscriptionAfterIssue(db: Db, subscriptionId: string, issueDate: Date) {
   const subscription = await db.query.subscriptions.findFirst({ where: eq(subscriptions.id, subscriptionId) });
   if (!subscription) throw new Error(`Subscription ${subscriptionId} not found`);
+  if (new Date(subscription.nextIssueAt).getTime() > issueDate.getTime()) {
+    return { advanced: false, nextIssueAt: subscription.nextIssueAt };
+  }
+  const nextIssueAt = nextIssueDate(issueDate, subscription.frequency as SubscriptionFrequency).toISOString();
   await db
     .update(subscriptions)
     .set({
       lastIssueAt: issueDate.toISOString(),
-      nextIssueAt: nextIssueDate(issueDate, subscription.frequency as SubscriptionFrequency).toISOString()
+      nextIssueAt
     })
     .where(eq(subscriptions.id, subscriptionId));
+  return { advanced: true, nextIssueAt };
 }

@@ -31,7 +31,7 @@ export class MockStoryGenerator implements StoryGenerator {
       premise: `${collectionLabel} gets a gentle evolving-world adventure led by ${mainCharacter?.name ?? "a main character"} about trying again after a wobbly day.`,
       featuredCharacterIds: context.characters.slice(0, 3).map((character) => character.id),
       theme: "Trying again after frustration",
-      continuityReferences: context.canon.slice(0, 2).map((event) => ({ canonEventId: event.id, purpose: "Gentle continuity callback" })),
+      continuityReferences: context.memory.importantEvents.slice(0, 2).map((event) => ({ memoryId: event.id, entityIds: event.entityIds, purpose: "Gentle continuity callback" })),
       beats: [
         { order: 1, description: `${mainCharacter?.name ?? "Juniper"} finds a tiny door where the sky meets the tallest hill.` },
         { order: 2, description: "Pip worries they cannot fix it before moonrise." },
@@ -76,7 +76,27 @@ export class MockStoryGenerator implements StoryGenerator {
           summary: `${childDisplayName(context.child.firstName)} stories can gently explore trying again after frustration.`,
           importance: 4
         }
-      ]
+      ],
+      memoryEvents: [
+        {
+          scope: "CHILD",
+          eventType: "CHARACTER_DEVELOPMENT",
+          summary: "Juniper learned that patient teamwork can make mischief kinder.",
+          importance: 3,
+          confidence: 4,
+          entities: [{ entityType: "CHARACTER", entityId: context.characters[0]?.id ?? "character_juniper" }]
+        }
+      ],
+      characterProfileMemories: [
+        {
+          characterId: context.characters[0]?.id ?? "character_juniper",
+          memoryType: "GROWTH",
+          summary: "Patient teamwork helps this character turn big ideas into kinder surprises.",
+          importance: 3
+        }
+      ],
+      characterRelationshipMemories: [],
+      imageMemoryCandidates: []
     });
   }
 }

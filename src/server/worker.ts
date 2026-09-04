@@ -2,10 +2,11 @@ import { createApi, runScheduler } from "./api/http";
 import type { Env } from "./env";
 import { GenerateBookWorkflow } from "../workflows/generate-book";
 import { BuildWorldWorkflow } from "../workflows/build-world";
+import { MemberWorldObject } from "../workflows/member-world-object";
 
 const api = createApi();
 
-export { BuildWorldWorkflow, GenerateBookWorkflow };
+export { BuildWorldWorkflow, GenerateBookWorkflow, MemberWorldObject };
 
 export default {
   fetch(request: Request, env: Env, ctx: ExecutionContext) {

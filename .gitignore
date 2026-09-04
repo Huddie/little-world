@@ -52,6 +52,7 @@ tmp/
 temp/
 out/
 img-dump/
+Screenshot*.png
 
 # OS / editor
 .DS_Store

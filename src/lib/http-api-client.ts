@@ -1,4 +1,4 @@
-import type { AdminAccess, AdminBookIssue, AdminChildRow, AdminDelivery, AdminFailures, AdminSubscriptionRow, AdminUserRow, BookIssue, ChildSummary, DashboardData, Product, SelectedCharacter, UserProfile } from "../types/client";
+import type { AdminAccess, AdminBookIssue, AdminChildRow, AdminDelivery, AdminFailures, AdminMemory, AdminSubscriptionRow, AdminUserRow, BookIssue, ChildSummary, DashboardData, Product, SelectedCharacter, UserProfile } from "../types/client";
 import type { ApiClient } from "./api-client";
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
@@ -96,6 +96,14 @@ export const httpApiClient: ApiClient = {
 
   getAdminFailures() {
     return request<AdminFailures>("/api/admin/failures");
+  },
+
+  getAdminMemory() {
+    return request<AdminMemory>("/api/admin/memory");
+  },
+
+  backfillAdminMemory() {
+    return request<{ queued: number }>("/api/admin/memory/backfill", { method: "POST" });
   },
 
   getAdminUsers() {

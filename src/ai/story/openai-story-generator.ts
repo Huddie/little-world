@@ -39,7 +39,18 @@ export class OpenAiStoryGenerator implements StoryGenerator {
   }
 
   async extractCanon(context: StoryContext, manuscript: StoryManuscript): Promise<CanonExtraction> {
-    return this.generateJson("Summarize the episode and extract durable canon events. Return JSON only.", { context, manuscript }, canonExtractionSchema);
+    return this.generateJson(
+      [
+        "Summarize the episode and extract durable story memory. Return JSON only.",
+        "memoryEvents are durable facts future episodes may need: discoveries, promises, meetings, location changes, character development, and recurring objects.",
+        "characterProfileMemories are only durable facts about a cast member's background, trait, skill, fear, preference, or growth.",
+        "characterRelationshipMemories describe durable relationship history between two locked cast members, including when they first met if established.",
+        "imageMemoryCandidates should include only important illustrated pages worth reusing as hidden visual continuity references.",
+        "Use only character IDs, page numbers, and facts present in the manuscript/context.",
+      ].join("\n"),
+      { context, manuscript },
+      canonExtractionSchema
+    );
   }
 
   private async generateJson<T>(instruction: string, input: unknown, schema: z.ZodType<T>): Promise<T> {
@@ -49,7 +60,7 @@ export class OpenAiStoryGenerator implements StoryGenerator {
       input: [
         {
           role: "system",
-          content: "You write safe, coherent children's stories for the requested age range. This is an evolving Little World, not a fixed canned series: use storyExamples for tone, structure, and variety, then create a unique episode that grows from recentSummaries and canon. Use only the locked character cast from input, keep their display names stable, and make the MAIN character the lead. Connected worlds are parent-approved and optional; include crossover elements only when the provided probability/context supports it, and never expose private family information. Do not assume the child appears in the story or has a provided name. Return only valid JSON matching the requested schema."
+          content: "You write safe, coherent children's stories for the requested age range. This is an evolving Little World, not a fixed canned series: use storyExamples for tone, structure, and variety, then create a unique episode that grows from recentSummaries, canon, and memory. Use only the locked character cast from input, keep their display names stable, and make the MAIN character the lead. Preserve retrieved memory facts, do not invent prior meetings or past events unless they are included in context, and reference memory only when it naturally supports the episode. Connected worlds are parent-approved and optional; include crossover elements only when the provided probability/context supports it, and never expose private family information. Do not assume the child appears in the story or has a provided name. Return only valid JSON matching the requested schema."
         },
         {
           role: "user",

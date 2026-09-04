@@ -36,9 +36,29 @@
       "bucket_name": "little-world-assets"
     }
   ],
+  "vectorize": [
+    {
+      "binding": "STORY_MEMORY_INDEX",
+      "index_name": "little-world-story-memory"
+    }
+  ],
   "browser": {
     "binding": "BROWSER"
   },
+  "durable_objects": {
+    "bindings": [
+      {
+        "name": "MEMBER_WORLD",
+        "class_name": "MemberWorldObject"
+      }
+    ]
+  },
+  "migrations": [
+    {
+      "tag": "v1",
+      "new_sqlite_classes": ["MemberWorldObject"]
+    }
+  ],
   "workflows": [
     {
       "name": "build-world",
@@ -59,6 +79,8 @@
     "OPENAI_STORY_MODEL": "gpt-5.6-terra",
     "OPENAI_FAST_MODEL": "gpt-5.6-luna",
     "OPENAI_IMAGE_MODEL": "gpt-image-2",
+    "OPENAI_EMBEDDING_MODEL": "text-embedding-3-small",
+    "OPENAI_EMBEDDING_DIMENSIONS": "1536",
     "RESEND_FROM_EMAIL": "Little World <stories@mail.littleworldstory.com>",
     "ADMIN_EMAILS": "adlerehud@gmail.com,easports96@gmail.com"
   }

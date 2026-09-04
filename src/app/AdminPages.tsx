@@ -1,4 +1,4 @@
-import { CheckCircle2, Circle, Clock3, LoaderCircle, RefreshCw, XCircle } from "lucide-react";
+import { Brain, CheckCircle2, Circle, Clock3, LoaderCircle, RefreshCw, XCircle } from "lucide-react";
 import type { ReactNode } from "react";
 import { useState } from "react";
 import { Link, useParams } from "react-router-dom";
@@ -8,10 +8,11 @@ import { EmptyState } from "../components/ui/EmptyState";
 import { ErrorState } from "../components/ui/ErrorState";
 import { LoadingState } from "../components/ui/LoadingState";
 import { StatusBadge } from "../components/ui/StatusBadge";
+import { Artwork } from "../components/ui/Artwork";
 import { apiClient } from "../lib/api-client";
 import { formatDate, formatDateTime } from "../lib/format";
 import { useAsyncResource } from "../lib/use-async-resource";
-import type { AdminBookIssue } from "../types/client";
+import type { AdminBookIssue, BookPage } from "../types/client";
 
 export function AdminPlaceholderPage({ title }: { title: string }) {
   return (
@@ -242,6 +243,92 @@ export function AdminFailuresPage() {
   );
 }
 
+export function AdminMemoryPage() {
+  const [backfilling, setBackfilling] = useState(false);
+  const [backfillResult, setBackfillResult] = useState<string | null>(null);
+  const [backfillError, setBackfillError] = useState<Error | null>(null);
+  const memoryResource = useAsyncResource(() => apiClient.getAdminMemory(), []);
+
+  if (memoryResource.status === "loading") return <LoadingState label="Loading memory" />;
+  if (memoryResource.status === "error") return <ErrorState message={memoryResource.error.message} onRetry={memoryResource.reload} title="Could not load memory" />;
+
+  const memory = memoryResource.data;
+
+  return (
+    <div className="space-y-6">
+      <Card className="p-5">
+        <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+          <div>
+            <h1 className="flex items-center gap-2 text-2xl font-black"><Brain size={22} /> Story memory</h1>
+            <p className="mt-1 text-sm text-moss-700">Internal continuity records extracted from generated books.</p>
+          </div>
+          <Button
+            disabled={backfilling}
+            onClick={() => {
+              setBackfilling(true);
+              setBackfillResult(null);
+              setBackfillError(null);
+              void apiClient.backfillAdminMemory()
+                .then((result) => {
+                  setBackfillResult(`${result.queued} memory backfill jobs queued.`);
+                  return memoryResource.reload();
+                })
+                .catch((error: unknown) => setBackfillError(error instanceof Error ? error : new Error("Backfill failed")))
+                .finally(() => setBackfilling(false));
+            }}
+            variant="secondary"
+          >
+            <RefreshCw size={16} />
+            {backfilling ? "Backfilling..." : "Backfill missing"}
+          </Button>
+        </div>
+        {backfillResult ? <p className="mt-3 text-sm font-semibold text-moss-700">{backfillResult}</p> : null}
+        {backfillError ? <p className="mt-3 text-sm font-semibold text-petal-500">{backfillError.message}</p> : null}
+      </Card>
+
+      <AdminTable title="Memory events" subtitle="Ranked facts available to future story generation.">
+        <thead className="bg-moss-50 text-xs uppercase tracking-wide text-moss-700">
+          <tr>
+            <th className="px-5 py-3">Created</th>
+            <th className="px-5 py-3">Type</th>
+            <th className="px-5 py-3">Importance</th>
+            <th className="px-5 py-3">Embedding</th>
+            <th className="px-5 py-3">Summary</th>
+            <th className="px-5 py-3">Entities</th>
+          </tr>
+        </thead>
+        <tbody className="divide-y divide-moss-100">
+          {memory.events.map((event) => (
+            <tr className="hover:bg-moss-50/60" key={event.id}>
+              <td className="px-5 py-4 text-moss-700">{formatDateTime(event.createdAt)}</td>
+              <td className="px-5 py-4 font-semibold">{event.eventType}</td>
+              <td className="px-5 py-4">{event.importance}</td>
+              <td className="px-5 py-4 text-moss-700">{event.embeddingStatus}</td>
+              <td className="max-w-xl px-5 py-4 text-moss-800">{event.summary}</td>
+              <td className="px-5 py-4 text-xs text-moss-700">{event.entities.map((entity) => `${entity.entityType}:${entity.entityId.slice(-8)}`).join(", ") || "-"}</td>
+            </tr>
+          ))}
+        </tbody>
+      </AdminTable>
+
+      <div className="grid gap-6 xl:grid-cols-3">
+        <MemorySummaryCard count={memory.characterProfiles.length} label="Character profile facts" />
+        <MemorySummaryCard count={memory.relationships.length} label="Relationship facts" />
+        <MemorySummaryCard count={memory.imageMemories.length} label="Hidden image memories" />
+      </div>
+    </div>
+  );
+}
+
+function MemorySummaryCard({ count, label }: { count: number; label: string }) {
+  return (
+    <Card className="p-5">
+      <p className="text-sm font-semibold text-moss-700">{label}</p>
+      <p className="mt-2 text-3xl font-black">{count}</p>
+    </Card>
+  );
+}
+
 export function AdminBookIssuesPage() {
   const issuesResource = useAsyncResource(() => apiClient.getAdminIssues(), []);
 
@@ -321,6 +408,7 @@ export function AdminBookIssueDetailPage() {
   const { id } = useParams<{ id: string }>();
   const [retrying, setRetrying] = useState(false);
   const [retryError, setRetryError] = useState<Error | null>(null);
+  const [inspectedPage, setInspectedPage] = useState<BookPage | null>(null);
   const issueResource = useAsyncResource(() => {
     if (!id) throw new Error("Missing issue id");
     return apiClient.getAdminIssue(id);
@@ -387,11 +475,26 @@ export function AdminBookIssueDetailPage() {
             {issue.pages.length > 0 ? (
               <div className="grid gap-3">
                 {issue.pages.map((page) => (
-                  <div className="rounded-md border border-moss-100 p-3" key={page.id}>
-                    <p className="text-xs font-bold uppercase tracking-wide text-moss-700">
-                      Page {page.pageNumber} | {page.pageType}
-                    </p>
-                    <p className="mt-2 text-sm leading-6">{page.text}</p>
+                  <div className="grid gap-3 rounded-md border border-moss-100 p-3 sm:grid-cols-[112px_minmax(0,1fr)]" key={page.id}>
+                    <button
+                      aria-label={`Inspect page ${page.pageNumber} illustration`}
+                      className="overflow-hidden rounded-lg text-left transition hover:scale-[1.01] focus:outline-none focus:ring-4 focus:ring-moon-100"
+                      onClick={() => setInspectedPage(page)}
+                      type="button"
+                    >
+                      <Artwork
+                        className="aspect-[4/3] w-full"
+                        label="No page image yet"
+                        pendingLabel="Illustration pending"
+                        src={page.illustrationUrl}
+                      />
+                    </button>
+                    <div className="min-w-0">
+                      <p className="text-xs font-bold uppercase tracking-wide text-moss-700">
+                        Page {page.pageNumber} | {page.pageType}
+                      </p>
+                      <p className="mt-2 text-sm leading-6">{page.text}</p>
+                    </div>
                   </div>
                 ))}
               </div>
@@ -447,6 +550,36 @@ export function AdminBookIssueDetailPage() {
               <pre className="mt-3 overflow-auto rounded-md bg-petal-100 p-3 text-xs text-petal-500">{issue.rawError}</pre>
             </Card>
           ) : null}
+        </div>
+      </div>
+      {inspectedPage ? <AdminPageImageModal onClose={() => setInspectedPage(null)} page={inspectedPage} /> : null}
+    </div>
+  );
+}
+
+function AdminPageImageModal({ onClose, page }: { onClose: () => void; page: BookPage }) {
+  return (
+    <div aria-modal="true" className="fixed inset-0 z-50 grid place-items-center bg-moss-900/50 p-4" onMouseDown={onClose} role="dialog">
+      <div className="flex max-h-[calc(100vh-2rem)] w-full max-w-4xl flex-col overflow-hidden rounded-2xl bg-white shadow-2xl dark:bg-slate-950" onMouseDown={(event) => event.stopPropagation()}>
+        <div className="flex items-start justify-between gap-4 border-b border-moon-100 p-5 dark:border-white/10">
+          <div>
+            <p className="text-xs font-bold uppercase tracking-wide text-moss-700 dark:text-slate-300">
+              Page {page.pageNumber} | {page.pageType}
+            </p>
+            <h2 className="mt-1 text-xl font-black text-moss-900 dark:text-white">Generated page image</h2>
+          </div>
+          <button aria-label="Close image inspection" className="grid h-10 w-10 place-items-center rounded-full hover:bg-moon-50 dark:hover:bg-white/8" onClick={onClose} type="button">
+            ×
+          </button>
+        </div>
+        <div className="min-h-0 flex-1 overflow-y-auto p-5">
+          <Artwork
+            className="mx-auto aspect-[4/3] w-full max-w-3xl"
+            label="No page image yet"
+            pendingLabel="Illustration pending"
+            src={page.illustrationUrl}
+          />
+          <p className="mt-4 rounded-lg bg-moon-50 p-4 text-sm leading-6 text-moss-800 dark:bg-white/8 dark:text-slate-200">{page.text}</p>
         </div>
       </div>
     </div>

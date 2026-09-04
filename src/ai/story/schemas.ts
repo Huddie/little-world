@@ -7,7 +7,8 @@ export const storyOutlineSchema = z.object({
   theme: z.string().min(1),
   continuityReferences: z.array(
     z.object({
-      canonEventId: z.string().min(1),
+      memoryId: z.string().min(1),
+      entityIds: z.array(z.string().min(1)).default([]),
       purpose: z.string().min(1)
     })
   ),
@@ -59,7 +60,48 @@ export const canonExtractionSchema = z.object({
       summary: z.string().min(1),
       importance: z.number().int().min(1).max(5)
     })
-  )
+  ).default([]),
+  memoryEvents: z.array(
+    z.object({
+      scope: z.enum(["GLOBAL", "CHILD", "SHARED"]).default("CHILD"),
+      eventType: z.string().min(1),
+      summary: z.string().min(1),
+      importance: z.number().int().min(1).max(5),
+      confidence: z.number().int().min(1).max(5).default(3),
+      storyTime: z.string().nullable().optional(),
+      entities: z.array(z.object({
+        entityType: z.enum(["CHARACTER", "SOURCE_CHARACTER", "LOCATION", "CHILD", "UNIVERSE", "RELATIONSHIP"]),
+        entityId: z.string().min(1)
+      })).default([])
+    })
+  ).default([]),
+  characterProfileMemories: z.array(
+    z.object({
+      characterId: z.string().min(1),
+      memoryType: z.string().min(1),
+      summary: z.string().min(1),
+      importance: z.number().int().min(1).max(5)
+    })
+  ).default([]),
+  characterRelationshipMemories: z.array(
+    z.object({
+      characterAId: z.string().min(1),
+      characterBId: z.string().min(1),
+      relationshipType: z.string().min(1),
+      summary: z.string().min(1),
+      firstMetAtStoryTime: z.string().nullable().optional(),
+      importance: z.number().int().min(1).max(5)
+    })
+  ).default([]),
+  imageMemoryCandidates: z.array(
+    z.object({
+      characterId: z.string().min(1),
+      pageNumber: z.number().int().positive(),
+      caption: z.string().min(1),
+      importance: z.number().int().min(1).max(5),
+      reason: z.string().min(1)
+    })
+  ).default([])
 });
 
 export type CanonExtraction = z.infer<typeof canonExtractionSchema>;
@@ -67,6 +109,7 @@ export type CanonExtraction = z.infer<typeof canonExtractionSchema>;
 export type StoryCharacter = {
   id: string;
   name: string;
+  sourceCharacterId: string | null;
   baseName: string;
   description: string;
   personality: string;
@@ -74,6 +117,13 @@ export type StoryCharacter = {
   profileImagesJson: string;
   hiddenStyleReferencesJson: string;
   role: "MAIN" | "SUPPORTING";
+};
+
+export type StoryMemoryContext = {
+  importantEvents: Array<{ id: string; scope: string; eventType: string; summary: string; importance: number; entityIds: string[] }>;
+  characterHistories: Array<{ id: string; characterId: string; memoryType: string; summary: string; importance: number }>;
+  relationshipHistories: Array<{ id: string; characterAId: string; characterBId: string; relationshipType: string; summary: string; importance: number }>;
+  visualMemories: Array<{ id: string; characterId: string; assetId: string; caption: string; importance: number }>;
 };
 
 export type StoryContext = {
@@ -91,6 +141,7 @@ export type StoryContext = {
   recentSummaries: Array<{ episodeNumber: number; summary: string }>;
   storyExamples: Array<{ title: string; ageRange: string; genre: string; summary: string; beats: string[]; styleNotes: string }>;
   canon: Array<{ id: string; eventType: string; summary: string; importance: number }>;
+  memory: StoryMemoryContext;
   connectedWorlds: {
     probability: number;
     childIds: string[];
